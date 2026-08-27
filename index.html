@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="theme-color" content="#14201b">
+<title>工数打刻</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root{
+    --bg:#f2f4f1; --ink:#161b18; --sub:#5c6661; --line:#d7ddd8;
+    --work:#1e6b4a; --brk:#a8730f; --idle:#4c5a55; --err:#b3372e; --card:#fff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; background:var(--bg); color:var(--ink);
+       font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
+  .wrap{max-width:520px; margin:0 auto; padding:12px 12px 90px}
+  header{display:flex; justify-content:space-between; align-items:baseline; padding:2px 4px 10px}
+  header h1{font-size:15px; margin:0; letter-spacing:.12em; font-weight:600}
+  header span{font-size:12px; color:var(--sub)}
+
+  /* 状態パネル */
+  #state{border-radius:14px; padding:26px 20px; color:#fff; background:var(--idle);
+         transition:background .25s; min-height:150px; display:flex;
+         flex-direction:column; justify-content:center; gap:6px}
+  #state .lbl{font-size:12px; opacity:.85; letter-spacing:.16em}
+  #state .proc{font-size:34px; font-weight:700; line-height:1.15; word-break:break-all}
+  #state .el{font-size:22px; font-variant-numeric:tabular-nums; opacity:.95}
+  #state.working{background:var(--work)} #state.brk{background:var(--brk)}
+
+  #msg{margin:12px 2px; min-height:22px; font-size:15px; color:var(--sub)}
+  #msg.ok{color:var(--work)} #msg.err{color:var(--err)}
+
+  button,.btn{font:inherit; border:0; border-radius:12px; cursor:pointer}
+  #scanBtn{width:100%; padding:20px; font-size:19px; font-weight:700; background:var(--ink); color:#fff}
+  #scanBtn:disabled{background:#9aa4a0}
+  .row{display:flex; gap:8px; margin-top:9px; flex-wrap:wrap}
+  .row button,.row .btn{flex:1; min-width:44%; padding:12px; background:#fff;
+    border:1px solid var(--line); color:var(--ink); font-size:14px; text-align:center; text-decoration:none}
+  .row button.on{border-color:var(--work); color:var(--work); font-weight:600}
+
+  section{background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:14px; margin-top:14px}
+  h2{font-size:12px; color:var(--sub); letter-spacing:.14em; margin:0 0 10px; font-weight:600}
+  .warn{border-color:var(--err)} .warn li{color:var(--err); font-size:14px; margin:5px 0}
+  ul{margin:0; padding-left:1.1em}
+
+  #reg{display:none}
+  input[type=text],input[type=datetime-local],input[type=date],select{
+    font:inherit; font-size:14px; padding:10px; border:1px solid var(--line);
+    border-radius:8px; background:#fff; max-width:100%}
+  #regName{width:100%; margin:8px 0}
+  #reg label{margin-right:14px; font-size:14px}
+  .save{margin-top:10px; width:100%; padding:12px; background:var(--work); color:#fff; font-size:15px}
+
+  .day{margin-bottom:14px}
+  .day .d{font-size:14px; font-weight:700; display:flex; justify-content:space-between; margin-bottom:4px}
+  .day .tot{color:var(--sub); font-weight:400; font-variant-numeric:tabular-nums}
+  .bar-row{display:grid; grid-template-columns:7.5em 1fr 3.6em; gap:8px; align-items:center;
+           font-size:13px; padding:3px 0}
+  .bar{height:14px; background:var(--work); border-radius:3px; min-width:2px; display:block}
+  .val{text-align:right; font-variant-numeric:tabular-nums; color:var(--sub)}
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  th,td{padding:7px 5px; border-bottom:1px solid var(--line); text-align:left}
+  th{color:var(--sub); font-weight:600}
+  td button{padding:5px 9px; border:1px solid var(--line); background:#fff; font-size:12px}
+  td button.del{color:var(--err); border-color:var(--err)}
+  .mono{font-family:ui-monospace,monospace; font-size:11px; color:var(--sub)}
+  .inline{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px}
+  .note{font-size:12px; color:var(--sub); line-height:1.6; margin-top:8px}
+  .t{font-variant-numeric:tabular-nums; color:var(--sub)}
+
+  /* 下部タブ */
+  nav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--line);
+      display:flex; padding-bottom:env(safe-area-inset-bottom)}
+  nav button{flex:1; padding:14px 4px; background:none; font-size:13px; color:var(--sub); border-radius:0}
+  nav button.on{color:var(--work); font-weight:700; box-shadow:inset 0 2px 0 var(--work)}
+  .view{display:none} .view.on{display:block}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>工数打刻</h1><span id="storeInfo"></span></header>
+
+  <!-- ===== 打刻 ===== -->
+  <div class="view on" id="v-punch">
+    <div id="state"><div class="lbl">状態</div>
+      <div class="proc" id="procName">待機中</div><div class="el" id="elapsed"></div></div>
+    <div id="msg">「読み取り開始」を押してからカードをかざしてください</div>
+    <button id="scanBtn">読み取り開始</button>
+    <div class="row">
+      <button id="wakeBtn">画面を消灯しない: OFF</button>
+      <button id="manualBtn">カードなしで打刻</button>
+    </div>
+
+    <section id="reg">
+      <h2>未登録のカードです</h2>
+      <div class="mono" id="regUid"></div>
+      <input type="text" id="regName" placeholder="名前(例: 検反、段取り、休憩)">
+      <div>
+        <label><input type="radio" name="kind" value="process" checked> 工程</label>
+        <label><input type="radio" name="kind" value="break"> 休憩</label>
+      </div>
+      <button class="save" id="regSave">この名前で登録する</button>
+    </section>
+
+    <section id="manualSec" style="display:none">
+      <h2>カードなしで打刻</h2>
+      <div class="inline">
+        <select id="mCard"></select>
+        <button id="mNow">今すぐ打刻</button>
+      </div>
+      <div class="note">カードを持っていない時や、打刻を忘れた時に使います。過去の時刻を入れるときは「記録」タブから追加してください。</div>
+    </section>
+
+    <section><h2>今日の打刻</h2><ul id="today" style="list-style:none; padding:0; margin:0"></ul></section>
+  </div>
+
+  <!-- ===== 集計 ===== -->
+  <div class="view" id="v-sum">
+    <section class="warn" id="unfinished" style="display:none">
+      <h2>要確認:終了打刻のないセッション</h2><ul id="unfList"></ul>
+    </section>
+    <section>
+      <h2>日別・工程別の正味工数(休憩控除後)</h2>
+      <div id="daily"></div>
+      <div class="row">
+        <button class="rng on" data-days="7">7日</button>
+        <button class="rng" data-days="14">14日</button>
+        <button class="rng" data-days="31">31日</button>
+      </div>
+    </section>
+    <section>
+      <h2>工程別の合計(期間内)</h2><div id="byProc"></div>
+    </section>
+  </div>
+
+  <!-- ===== 記録の修正 ===== -->
+  <div class="view" id="v-log">
+    <section>
+      <h2>打刻の修正</h2>
+      <div class="inline"><input type="date" id="logDate"><button id="logShow">この日を表示</button></div>
+      <table id="logTable"></table>
+      <div class="inline">
+        <select id="addCard"></select>
+        <input type="datetime-local" id="addTs">
+        <button id="addBtn">この時刻に追加</button>
+      </div>
+    </section>
+    <section>
+      <h2>登録済みカード</h2><table id="cardTable"></table>
+      <div class="note">名前を変えても過去の記録に反映されます(記録はUIDで保持)。</div>
+    </section>
+  </div>
+
+  <!-- ===== データ ===== -->
+  <div class="view" id="v-data">
+    <section>
+      <h2>書き出し</h2>
+      <div class="row">
+        <button id="expSum">工数CSV</button>
+        <button id="expRaw">生ログCSV</button>
+      </div>
+      <div class="note">CSVはExcelでそのまま開けます。共有先にドライブやメールを選べます。</div>
+    </section>
+    <section>
+      <h2>バックアップ</h2>
+      <div class="row">
+        <button id="expJson">バックアップを保存</button>
+        <button id="impJson">バックアップから復元</button>
+      </div>
+      <input type="file" id="impFile" accept=".json" style="display:none">
+      <div class="note">データはこのスマホの中だけにあります。ブラウザのデータを消すと記録も消えるため、週に1度バックアップを保存してください。</div>
+    </section>
+    <section>
+      <h2>状況</h2><div class="note" id="stats"></div>
+    </section>
+  </div>
+</div>
+
+<nav>
+  <button class="on" data-v="punch">打刻</button>
+  <button data-v="sum">集計</button>
+  <button data-v="log">記録</button>
+  <button data-v="data">データ</button>
+</nav>
+
+<script>
+/* ========== 保存層(端末内) ========== */
+const KEY_C = 'kosu.cards', KEY_E = 'kosu.events';
+const mem = {};                                    // 保存不可環境向けフォールバック
+function raw(k){ try{ return localStorage.getItem(k); }catch(e){ return mem[k] ?? null; } }
+function rawSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){ mem[k] = v; } }
+function persistent(){ try{ localStorage.setItem('kosu.t','1'); localStorage.removeItem('kosu.t'); return true; }catch(e){ return false; } }
+let cards = JSON.parse(raw(KEY_C) || '{}');        // {uid:{name,kind}}
+let events = JSON.parse(raw(KEY_E) || '[]');       // [{id,ts,uid,src}]
+const saveC = () => rawSet(KEY_C, JSON.stringify(cards));
+const saveE = () => { events.sort((a,b)=>a.ts-b.ts); rawSet(KEY_E, JSON.stringify(events)); };
+const $ = id => document.getElementById(id);
+const normUid = u => String(u).trim().toLowerCase().replace(/-/g,':');
+const DEBOUNCE = 8000, UNFIN_H = 12;
+
+/* ========== セッション構築(集計の芯) ========== */
+function buildSessions(evs, now = Date.now()){
+  const S = []; let cur = null, brk = null;
+  const start = (uid, t) => ({uid, name: cards[uid].name, start: t, end: null, brk: 0, open: false});
+  for(const e of evs.slice().sort((a,b)=>a.ts-b.ts)){
+    const c = cards[e.uid]; if(!c) continue;
+    if(c.kind === 'break'){
+      if(!cur) continue;
+      if(brk === null){ brk = e.ts; } else { cur.brk += e.ts - brk; brk = null; }
+    }else{
+      if(cur && brk !== null){
+        cur.brk += e.ts - brk; brk = null;
+        if(e.uid === cur.uid) continue;             // 休憩明け再開
+      }
+      if(!cur){ cur = start(e.uid, e.ts); }
+      else if(e.uid === cur.uid){ cur.end = e.ts; S.push(cur); cur = null; }
+      else { cur.end = e.ts; S.push(cur); cur = start(e.uid, e.ts); }
+    }
+  }
+  const st = {working:false, onBreak:false, name:null, uid:null, since:null, brkSince:null};
+  if(cur){
+    if(brk !== null){ cur.brk += now - brk; st.onBreak = true; st.brkSince = brk; }
+    cur.open = true; S.push(cur);
+    Object.assign(st, {working:true, name:cur.name, uid:cur.uid, since:cur.start});
+  }
+  for(const s of S){ s.net = Math.max(0, (s.end ?? now) - s.start - s.brk); }
+  return {sessions:S, state:st};
+}
+const fmtHM = ms => { const m = Math.round(ms/60000); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; };
+const dkey = ts => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const hm = ts => new Date(ts).toTimeString().slice(0,5);
+
+/* ========== 打刻 ========== */
+function beep(f){ try{ const c = new (window.AudioContext||window.webkitAudioContext)(),
+  o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination);
+  o.frequency.value = f; g.gain.value = .15; o.start(); o.stop(c.currentTime + .12); }catch(e){} }
+const setMsg = (t, c) => { $('msg').textContent = t; $('msg').className = c || ''; };
+
+function punch(uid, ts = Date.now(), src = 'nfc'){
+  uid = normUid(uid);
+  const c = cards[uid];
+  if(!c){                                          // 未登録 → その場で登録フォーム
+    beep(320); pendingUid = uid;
+    $('regUid').textContent = 'UID: ' + uid;
+    $('reg').style.display = 'block'; $('regName').focus();
+    setMsg('未登録カードです。下で名前をつけてください', 'err'); return;
+  }
+  const last = events.filter(e => e.uid === uid).pop();
+  if(last && Math.abs(ts - last.ts) < DEBOUNCE){ beep(320); setMsg('連続読み取りのため無視しました', 'err'); return; }
+
+  const {state:st} = buildSessions(events.filter(e => e.ts <= ts), ts);
+  let m;
+  if(c.kind === 'break'){
+    if(!st.working){ beep(320); setMsg('作業中ではないため休憩打刻は記録しません', 'err'); return; }
+    m = st.onBreak ? '休憩おわり・作業再開' : '休憩はじめ';
+  }else if(!st.working){ m = `「${c.name}」開始`; }
+  else if(uid === st.uid){ m = st.onBreak ? `休憩おわり・「${c.name}」再開` : `「${c.name}」終了`; }
+  else { m = `「${st.name}」終了 → 「${c.name}」開始`; }
+
+  events.push({id: Date.now() + Math.random(), ts, uid, src}); saveE();
+  if(navigator.vibrate) navigator.vibrate(60);
+  beep(880); $('reg').style.display = 'none'; setMsg(m, 'ok'); renderAll();
+}
+
+/* ========== 描画 ========== */
+let sinceTs = null, brkTs = null, pendingUid = null, wakeLock = null, rangeDays = 7;
+
+function renderPunch(){
+  const {state:st} = buildSessions(events);
+  const p = $('state'); sinceTs = st.since; brkTs = st.brkSince;
+  if(!st.working){ p.className = ''; $('procName').textContent = '待機中'; $('elapsed').textContent = ''; }
+  else if(st.onBreak){ p.className = 'brk'; $('procName').textContent = st.name + '(休憩中)'; }
+  else { p.className = 'working'; $('procName').textContent = st.name; }
+
+  const td = dkey(Date.now());
+  $('today').innerHTML = events.filter(e => dkey(e.ts) === td).reverse().map(e =>
+    `<li style="display:flex;gap:12px;padding:7px 2px;border-bottom:1px solid var(--line);font-size:14px">
+      <span class="t">${hm(e.ts)}</span><span>${cards[e.uid]?.name ?? '未登録'}</span>
+      ${e.src === 'nfc' ? '' : '<span class="t">手動</span>'}</li>`).join('')
+    || '<li style="font-size:14px;color:var(--sub)">まだありません</li>';
+}
+function tick(){
+  if(!sinceTs){ return; }
+  const s = Math.max(0, (Date.now() - (brkTs ?? sinceTs)) / 1000 | 0);
+  $('elapsed').textContent = (brkTs ? '休憩 ' : '') +
+    `${s/3600|0}:${String((s%3600)/60|0).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}
+setInterval(tick, 1000);
+
+function renderSummary(){
+  const from = Date.now() - rangeDays * 864e5;
+  const {sessions} = buildSessions(events);
+  const inR = sessions.filter(s => s.start >= from);
+  const byDay = {}, byProc = {}, unf = [];
+  for(const s of inR){
+    (byDay[dkey(s.start)] ??= {})[s.name] = (byDay[dkey(s.start)][s.name] || 0) + s.net;
+    byProc[s.name] = (byProc[s.name] || 0) + s.net;
+    if(s.open && (dkey(s.start) !== dkey(Date.now()) || s.net > UNFIN_H * 36e5)) unf.push(s);
+  }
+  const max = Math.max(1, ...Object.values(byDay).flatMap(o => Object.values(o)));
+  $('daily').innerHTML = Object.keys(byDay).sort().reverse().map(d => {
+    const rows = Object.entries(byDay[d]).sort((a,b) => b[1]-a[1]).map(([n,v]) =>
+      `<div class="bar-row"><span>${n}</span><span><span class="bar" style="width:${Math.round(100*v/max)}%"></span></span><span class="val">${fmtHM(v)}</span></div>`).join('');
+    const tot = Object.values(byDay[d]).reduce((a,b)=>a+b,0);
+    return `<div class="day"><div class="d"><span>${d}</span><span class="tot">計 ${fmtHM(tot)}</span></div>${rows}</div>`;
+  }).join('') || '<div class="note">まだ記録がありません。</div>';
+
+  const pmax = Math.max(1, ...Object.values(byProc));
+  $('byProc').innerHTML = Object.entries(byProc).sort((a,b) => b[1]-a[1]).map(([n,v]) =>
+    `<div class="bar-row"><span>${n}</span><span><span class="bar" style="width:${Math.round(100*v/pmax)}%"></span></span><span class="val">${fmtHM(v)}</span></div>`).join('')
+    || '<div class="note">—</div>';
+
+  $('unfinished').style.display = unf.length ? 'block' : 'none';
+  $('unfList').innerHTML = unf.map(s =>
+    `<li>${dkey(s.start).slice(5)} ${hm(s.start)}〜 「${s.name}」が終了していません。「記録」タブで終了時刻を追加してください</li>`).join('');
+}
+
+function cardOptions(){
+  return Object.entries(cards).map(([u,c]) =>
+    `<option value="${u}">${c.name}${c.kind === 'break' ? '(休憩)' : ''}</option>`).join('');
+}
+function renderLog(){
+  const d = $('logDate').value || dkey(Date.now());
+  $('logDate').value = d;
+  const rows = events.filter(e => dkey(e.ts) === d);
+  $('logTable').innerHTML = '<tr><th>時刻</th><th>カード</th><th>種別</th><th>入力</th><th></th></tr>' +
+    (rows.map(e => `<tr><td>${new Date(e.ts).toTimeString().slice(0,8)}</td>
+      <td>${cards[e.uid]?.name ?? '未登録'}</td>
+      <td>${cards[e.uid]?.kind === 'break' ? '休憩' : '工程'}</td>
+      <td>${e.src === 'nfc' ? 'NFC' : '手動'}</td>
+      <td><button class="del" onclick="delEvent(${e.id})">削除</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="note">この日の記録はありません</td></tr>');
+  $('addCard').innerHTML = cardOptions(); $('mCard').innerHTML = cardOptions();
+  if(!$('addTs').value) $('addTs').value = d + 'T12:00';
+
+  $('cardTable').innerHTML = '<tr><th>名前</th><th>種別</th><th>UID</th><th></th></tr>' +
+    (Object.entries(cards).map(([u,c]) => `<tr>
+      <td><input type="text" id="n_${u}" value="${c.name}" size="8"></td>
+      <td><select id="k_${u}"><option value="process"${c.kind==='process'?' selected':''}>工程</option>
+        <option value="break"${c.kind==='break'?' selected':''}>休憩</option></select></td>
+      <td class="mono">${u}</td>
+      <td><button onclick="updCard('${u}')">保存</button>
+          <button class="del" onclick="delCard('${u}')">削除</button></td></tr>`).join('')
+      || '<tr><td colspan="4" class="note">カードは、打刻画面でかざすと登録できます</td></tr>');
+
+  const days = new Set(events.map(e => dkey(e.ts))).size;
+  $('stats').textContent = `打刻 ${events.length}件 / カード ${Object.keys(cards).length}枚 / 記録日数 ${days}日`;
+}
+function renderAll(){ renderPunch(); renderSummary(); renderLog(); }
+
+/* ========== 操作 ========== */
+window.delEvent = id => { if(!confirm('この打刻を削除しますか?')) return;
+  events = events.filter(e => e.id !== id); saveE(); renderAll(); };
+window.updCard = u => { cards[u] = {name: $('n_'+u).value.trim() || cards[u].name, kind: $('k_'+u).value};
+  saveC(); renderAll(); };
+window.delCard = u => { if(!confirm('このカードを削除しますか?過去の記録は残ります')) return;
+  delete cards[u]; saveC(); renderAll(); };
+
+$('regSave').onclick = () => {
+  const n = $('regName').value.trim(); if(!n || !pendingUid) return;
+  cards[pendingUid] = {name: n, kind: document.querySelector('input[name=kind]:checked').value};
+  saveC(); $('reg').style.display = 'none'; $('regName').value = '';
+  setMsg(`「${n}」を登録しました。もう一度かざすと打刻されます`, 'ok');
+  pendingUid = null; renderAll();
+};
+$('manualBtn').onclick = () => {
+  const s = $('manualSec'); s.style.display = s.style.display === 'none' ? 'block' : 'none';
+};
+$('mNow').onclick = () => { if($('mCard').value) punch($('mCard').value, Date.now(), 'manual'); };
+$('addBtn').onclick = () => {
+  const u = $('addCard').value, v = $('addTs').value; if(!u || !v) return;
+  events.push({id: Date.now() + Math.random(), ts: new Date(v).getTime(), uid: u, src: 'manual'});
+  saveE(); renderAll(); setMsg('打刻を追加しました', 'ok');
+};
+$('logShow').onclick = renderLog;
+document.querySelectorAll('.rng').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.rng').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); rangeDays = +b.dataset.days; renderSummary();
+});
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
+  b.classList.add('on'); $('v-' + b.dataset.v).classList.add('on'); renderAll();
+});
+
+/* ---- NFC ---- */
+$('scanBtn').onclick = async () => {
+  if(!('NDEFReader' in window)){
+    setMsg('このブラウザはNFC非対応です。Android版Chromeで開いてください', 'err'); return;
+  }
+  try{
+    const r = new NDEFReader(); await r.scan();
+    r.onreading = e => punch(e.serialNumber);
+    r.onreadingerror = () => setMsg('読み取り失敗。もう一度かざしてください', 'err');
+    $('scanBtn').disabled = true; $('scanBtn').textContent = '読み取り待機中(かざしてください)';
+    setMsg('カードをかざすと打刻されます');
+  }catch(err){ setMsg('NFCを開始できません: ' + err.message, 'err'); }
+};
+$('wakeBtn').onclick = async () => {
+  if(wakeLock){ await wakeLock.release(); wakeLock = null;
+    $('wakeBtn').textContent = '画面を消灯しない: OFF'; $('wakeBtn').classList.remove('on'); return; }
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+    $('wakeBtn').textContent = '画面を消灯しない: ON'; $('wakeBtn').classList.add('on');
+    wakeLock.onrelease = () => { wakeLock = null;
+      $('wakeBtn').textContent = '画面を消灯しない: OFF'; $('wakeBtn').classList.remove('on'); };
+  }catch(e){ setMsg('画面ロック抑止を開始できませんでした', 'err'); }
+};
+
+/* ---- 書き出し / 復元 ---- */
+function dl(name, text, mime){
+  const b = new Blob(['\ufeff' + text], {type: mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+$('expSum').onclick = () => {
+  const {sessions} = buildSessions(events);
+  const rows = sessions.map(s => [dkey(s.start), s.name, hm(s.start),
+    s.end ? hm(s.end) : '(未終了)', Math.round(s.brk/60000), Math.round(s.net/60000)].join(','));
+  dl(`kosu_${dkey(Date.now())}.csv`, ['date,process,start,end,break_min,net_min', ...rows].join('\r\n'), 'text/csv');
+};
+$('expRaw').onclick = () => {
+  const rows = events.map(e => [new Date(e.ts).toISOString(), e.uid,
+    cards[e.uid]?.name ?? '未登録', e.src].join(','));
+  dl(`events_${dkey(Date.now())}.csv`, ['timestamp,uid,name,source', ...rows].join('\r\n'), 'text/csv');
+};
+$('expJson').onclick = () => dl(`kosu_backup_${dkey(Date.now())}.json`,
+  JSON.stringify({v:1, cards, events}), 'application/json');
+$('impJson').onclick = () => $('impFile').click();
+$('impFile').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const d = JSON.parse(await f.text());
+    if(!d.cards || !d.events) throw new Error('形式が違います');
+    if(!confirm('現在のデータを置き換えます。続けますか?')) return;
+    cards = d.cards; events = d.events; saveC(); saveE(); renderAll();
+    setMsg('バックアップから復元しました', 'ok');
+  }catch(err){ alert('復元できません: ' + err.message); }
+};
+
+/* ---- 起動 ---- */
+$('storeInfo').textContent = persistent() ? '端末内に保存' : '保存できない環境(お試し表示)';
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+$('logDate').value = dkey(Date.now());
+renderAll();
+</script>
+</body>
+</html>

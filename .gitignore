@@ -1,0 +1,13 @@
+# OS が作る不要ファイル
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# 検証用の一時ファイル
+node_modules/
+/tmp-verify/
+
+# 手順書。アプリの配信物ではないため公開しない
+CLAUDE_CODE_環境構築.md
