@@ -773,15 +773,28 @@ async function doSync(silent){
   try{
     const res = await fetch(sync.url, {method:'POST', body: JSON.stringify(body),
       headers:{'Content-Type':'text/plain;charset=utf-8'}});   // preflight を避けるため text/plain
-    const j = await res.json();
-    if(!res.ok || j.ok !== true) throw new Error(j.error || ('HTTP ' + res.status));
+    const text = await res.text();
+    let j;
+    try{ j = JSON.parse(text); }
+    catch(pe){
+      // ログイン画面のHTMLなどが返ってきたとき。原因がその場で分かるようにする
+      throw new Error(`応答がJSONではありません(HTTP ${res.status})。URLが /exec で終わっているか、`
+        + `デプロイのアクセス権が「全員」かを確認してください`);
+    }
+    if(!res.ok || j.ok !== true){
+      throw new Error(j.error === 'bad token'
+        ? 'トークンが一致しません(スクリプト プロパティの SHARED_TOKEN を確認)'
+        : (j.error || ('HTTP ' + res.status)));
+    }
     sync.sentIds = [...new Set([...sync.sentIds, ...body.events.map(e => e.id)])];
     deleted = []; saveDel();
     sync.lastAt = Date.now(); sync.lastOk = true; saveSync(); renderSyncState();
     if(!silent) setMsg(`同期しました(${body.events.length}件)`, 'ok');
   }catch(err){
     sync.lastOk = false; saveSync(); renderSyncState();
-    if(!silent) setMsg('同期に失敗: ' + err.message, 'err');
+    const hint = /failed to fetch|networkerror|load failed/i.test(err.message)
+      ? '通信できませんでした(圏外か、URLが違う可能性があります)' : err.message;
+    if(!silent) setMsg('同期に失敗: ' + hint, 'err');
   }
 }
 window.addEventListener('online', () => { if(sync.auto && sync.url) doSync(true); });
@@ -824,7 +837,8 @@ $('impFile').onchange = async e => {
 };
 
 /* ================= 起動 ================= */
-$('storeInfo').textContent = persistent() ? '端末内に保存' : '保存できない環境(お試し表示)';
+const APP_VERSION = 'v3';   // sw.js の const C と揃えること
+$('storeInfo').textContent = APP_VERSION + ' · ' + (persistent() ? '端末内に保存' : '保存できない環境');
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 $('logDate').value = dkey(Date.now());
 renderAll();
