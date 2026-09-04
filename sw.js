@@ -1,6 +1,6 @@
 // オフラインで使えるようにアプリ本体をキャッシュする
-const C = 'kosu-v1';
-const FILES = ['./', './index.html', './manifest.webmanifest'];
+const C = 'kosu-v2';
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(C).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
 });

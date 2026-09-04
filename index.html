@@ -10,22 +10,31 @@
   :root{
     --bg:#f2f4f1; --ink:#161b18; --sub:#5c6661; --line:#d7ddd8;
     --work:#1e6b4a; --brk:#a8730f; --idle:#4c5a55; --err:#b3372e; --card:#fff;
+    --emp:#2f5d8a; --proj:#6b3fa0;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   body{margin:0; background:var(--bg); color:var(--ink);
        font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
-  .wrap{max-width:520px; margin:0 auto; padding:12px 12px 90px}
+  .wrap{max-width:560px; margin:0 auto; padding:12px 12px 90px}
   header{display:flex; justify-content:space-between; align-items:baseline; padding:2px 4px 10px}
   header h1{font-size:15px; margin:0; letter-spacing:.12em; font-weight:600}
   header span{font-size:12px; color:var(--sub)}
 
-  /* 状態パネル */
-  #state{border-radius:14px; padding:26px 20px; color:#fff; background:var(--idle);
-         transition:background .25s; min-height:150px; display:flex;
-         flex-direction:column; justify-content:center; gap:6px}
+  /* 現在のコンテキスト */
+  #ctx{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px}
+  .ctxbox{background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 12px}
+  .ctxbox .k{font-size:11px; color:var(--sub); letter-spacing:.14em}
+  .ctxbox .v{font-size:17px; font-weight:700; margin-top:2px; word-break:break-all}
+  .ctxbox.emp{border-left:4px solid var(--emp)} .ctxbox.proj{border-left:4px solid var(--proj)}
+  .ctxbox .v.none{color:var(--sub); font-weight:400; font-size:15px}
+
+  #state{border-radius:14px; padding:22px 20px; color:#fff; background:var(--idle);
+         transition:background .25s; min-height:132px; display:flex;
+         flex-direction:column; justify-content:center; gap:5px}
   #state .lbl{font-size:12px; opacity:.85; letter-spacing:.16em}
-  #state .proc{font-size:34px; font-weight:700; line-height:1.15; word-break:break-all}
-  #state .el{font-size:22px; font-variant-numeric:tabular-nums; opacity:.95}
+  #state .proc{font-size:30px; font-weight:700; line-height:1.15; word-break:break-all}
+  #state .pj{font-size:14px; opacity:.9; word-break:break-all}
+  #state .el{font-size:21px; font-variant-numeric:tabular-nums; opacity:.95}
   #state.working{background:var(--work)} #state.brk{background:var(--brk)}
 
   #msg{margin:12px 2px; min-height:22px; font-size:15px; color:var(--sub)}
@@ -46,34 +55,43 @@
   ul{margin:0; padding-left:1.1em}
 
   #reg{display:none}
-  input[type=text],input[type=datetime-local],input[type=date],select{
+  input[type=text],input[type=number],input[type=datetime-local],input[type=date],select{
     font:inherit; font-size:14px; padding:10px; border:1px solid var(--line);
     border-radius:8px; background:#fff; max-width:100%}
   #regName{width:100%; margin:8px 0}
-  #reg label{margin-right:14px; font-size:14px}
+  #reg label{margin-right:12px; font-size:14px; display:inline-block; margin-bottom:6px}
   .save{margin-top:10px; width:100%; padding:12px; background:var(--work); color:#fff; font-size:15px}
 
   .day{margin-bottom:14px}
   .day .d{font-size:14px; font-weight:700; display:flex; justify-content:space-between; margin-bottom:4px}
   .day .tot{color:var(--sub); font-weight:400; font-variant-numeric:tabular-nums}
-  .bar-row{display:grid; grid-template-columns:7.5em 1fr 3.6em; gap:8px; align-items:center;
+  .bar-row{display:grid; grid-template-columns:8.5em 1fr 4.2em; gap:8px; align-items:center;
            font-size:13px; padding:3px 0}
   .bar{height:14px; background:var(--work); border-radius:3px; min-width:2px; display:block}
+  .stack{display:flex; height:14px; border-radius:3px; overflow:hidden; background:#eef1ee}
+  .stack i{display:block; height:100%}
   .val{text-align:right; font-variant-numeric:tabular-nums; color:var(--sub)}
+  .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; font-size:11px; color:var(--sub)}
+  .legend span{display:flex; align-items:center; gap:4px}
+  .legend i{width:10px; height:10px; border-radius:2px; display:block}
   table{width:100%; border-collapse:collapse; font-size:13px}
-  th,td{padding:7px 5px; border-bottom:1px solid var(--line); text-align:left}
+  th,td{padding:7px 5px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle}
   th{color:var(--sub); font-weight:600}
   td button{padding:5px 9px; border:1px solid var(--line); background:#fff; font-size:12px}
   td button.del{color:var(--err); border-color:var(--err)}
-  .mono{font-family:ui-monospace,monospace; font-size:11px; color:var(--sub)}
+  .mono{font-family:ui-monospace,monospace; font-size:11px; color:var(--sub); word-break:break-all}
   .inline{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px}
   .note{font-size:12px; color:var(--sub); line-height:1.6; margin-top:8px}
   .t{font-variant-numeric:tabular-nums; color:var(--sub)}
+  .pill{display:inline-block; font-size:11px; padding:2px 7px; border-radius:99px; color:#fff}
+  .pill.employee{background:var(--emp)} .pill.project{background:var(--proj)}
+  .pill.process{background:var(--work)} .pill.break{background:var(--brk)}
+  .over{color:var(--err); font-weight:700}
+  .under{color:var(--work)}
 
-  /* 下部タブ */
   nav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--line);
       display:flex; padding-bottom:env(safe-area-inset-bottom)}
-  nav button{flex:1; padding:14px 4px; background:none; font-size:13px; color:var(--sub); border-radius:0}
+  nav button{flex:1; padding:14px 2px; background:none; font-size:12px; color:var(--sub); border-radius:0}
   nav button.on{color:var(--work); font-weight:700; box-shadow:inset 0 2px 0 var(--work)}
   .view{display:none} .view.on{display:block}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -85,8 +103,16 @@
 
   <!-- ===== 打刻 ===== -->
   <div class="view on" id="v-punch">
+    <div id="ctx">
+      <div class="ctxbox emp"><div class="k">社員</div><div class="v none" id="ctxEmp">未選択</div></div>
+      <div class="ctxbox proj"><div class="k">案件</div><div class="v none" id="ctxProj">未選択</div></div>
+    </div>
+
     <div id="state"><div class="lbl">状態</div>
-      <div class="proc" id="procName">待機中</div><div class="el" id="elapsed"></div></div>
+      <div class="proc" id="procName">待機中</div>
+      <div class="pj" id="stateProj"></div>
+      <div class="el" id="elapsed"></div></div>
+
     <div id="msg">「読み取り開始」を押してからカードをかざしてください</div>
     <button id="scanBtn">読み取り開始</button>
     <div class="row">
@@ -97,12 +123,20 @@
     <section id="reg">
       <h2>未登録のカードです</h2>
       <div class="mono" id="regUid"></div>
-      <input type="text" id="regName" placeholder="名前(例: 検反、段取り、休憩)">
-      <div>
+      <div style="margin-top:8px">
+        <label><input type="radio" name="kind" value="employee"> 社員</label>
+        <label><input type="radio" name="kind" value="project"> 案件</label>
         <label><input type="radio" name="kind" value="process" checked> 工程</label>
         <label><input type="radio" name="kind" value="break"> 休憩</label>
       </div>
-      <button class="save" id="regSave">この名前で登録する</button>
+      <input type="text" id="regName" placeholder="名前(例: 山田、A社-春物、検反、休憩)">
+      <div id="regProjExtra" style="display:none">
+        <div class="inline">
+          <input type="text" id="regProjCode" placeholder="案件コード(任意)" style="flex:1">
+          <input type="number" id="regProjPlan" placeholder="予定工数(h)" step="0.5" min="0" style="width:9em">
+        </div>
+      </div>
+      <button class="save" id="regSave">この内容で登録する</button>
     </section>
 
     <section id="manualSec" style="display:none">
@@ -111,9 +145,10 @@
         <select id="mCard"></select>
         <button id="mNow">今すぐ打刻</button>
       </div>
-      <div class="note">カードを持っていない時や、打刻を忘れた時に使います。過去の時刻を入れるときは「記録」タブから追加してください。</div>
+      <div class="note">カードを持っていない時や打刻を忘れた時に使います。過去の時刻を入れるときは「記録」タブから追加してください。</div>
     </section>
 
+    <section><h2>作業中の人</h2><div id="whoNow"></div></section>
     <section><h2>今日の打刻</h2><ul id="today" style="list-style:none; padding:0; margin:0"></ul></section>
   </div>
 
@@ -122,21 +157,34 @@
     <section class="warn" id="unfinished" style="display:none">
       <h2>要確認:終了打刻のないセッション</h2><ul id="unfList"></ul>
     </section>
+    <div class="row">
+      <button class="rng on" data-days="7">7日</button>
+      <button class="rng" data-days="31">31日</button>
+      <button class="rng" data-days="90">90日</button>
+      <button class="rng" data-days="3650">全期間</button>
+    </div>
     <section>
-      <h2>日別・工程別の正味工数(休憩控除後)</h2>
-      <div id="daily"></div>
-      <div class="row">
-        <button class="rng on" data-days="7">7日</button>
-        <button class="rng" data-days="14">14日</button>
-        <button class="rng" data-days="31">31日</button>
-      </div>
+      <h2>案件別 × 工程内訳(正味・休憩控除後)</h2>
+      <div id="byProj"></div>
+      <div class="legend" id="procLegend"></div>
     </section>
     <section>
-      <h2>工程別の合計(期間内)</h2><div id="byProc"></div>
+      <h2>予定工数との差</h2><div id="planVsActual"></div>
+    </section>
+    <section>
+      <h2>工程別の合計(案件横断)</h2><div id="byProc"></div>
+      <div class="note">全案件を通して総時間が大きい工程ほど、改善の効果が全体に効きます。</div>
+    </section>
+    <section>
+      <h2>社員別のばらつき(工程ごとの1回あたり所要時間)</h2><div id="byEmp"></div>
+      <div class="note">同じ工程で人による差が大きいものは、手順の標準化や教育で縮められる余地があります。</div>
+    </section>
+    <section>
+      <h2>日別の合計</h2><div id="daily"></div>
     </section>
   </div>
 
-  <!-- ===== 記録の修正 ===== -->
+  <!-- ===== 記録 ===== -->
   <div class="view" id="v-log">
     <section>
       <h2>打刻の修正</h2>
@@ -147,22 +195,63 @@
         <input type="datetime-local" id="addTs">
         <button id="addBtn">この時刻に追加</button>
       </div>
+      <div class="note">工程・休憩の追加は、その時刻に有効だった社員・案件で記録されます。</div>
+    </section>
+  </div>
+
+  <!-- ===== マスタ ===== -->
+  <div class="view" id="v-master">
+    <section>
+      <h2>カードの割り当て</h2>
+      <table id="cardTable"></table>
+      <div class="note">案件が終わったら、案件カードの割り当てを別の案件に変更して使い回せます。<strong>過去の記録は打刻時点の案件のまま変わりません。</strong></div>
     </section>
     <section>
-      <h2>登録済みカード</h2><table id="cardTable"></table>
-      <div class="note">名前を変えても過去の記録に反映されます(記録はUIDで保持)。</div>
+      <h2>案件</h2>
+      <table id="projTable"></table>
+      <div class="inline">
+        <input type="text" id="npName" placeholder="案件名" style="flex:1; min-width:8em">
+        <input type="text" id="npCode" placeholder="コード" style="width:7em">
+        <input type="number" id="npPlan" placeholder="予定h" step="0.5" min="0" style="width:6em">
+        <button id="npAdd">追加</button>
+      </div>
+    </section>
+    <section>
+      <h2>社員</h2>
+      <table id="empTable"></table>
+      <div class="inline">
+        <input type="text" id="neName" placeholder="社員名" style="flex:1"><button id="neAdd">追加</button>
+      </div>
+    </section>
+    <section>
+      <h2>工程</h2>
+      <table id="procTable"></table>
+      <div class="inline">
+        <input type="text" id="npcName" placeholder="工程名" style="flex:1"><button id="npcAdd">追加</button>
+      </div>
     </section>
   </div>
 
   <!-- ===== データ ===== -->
   <div class="view" id="v-data">
     <section>
+      <h2>Google スプレッドシート連携</h2>
+      <input type="text" id="syncUrl" placeholder="GAS ウェブアプリの URL" style="width:100%; margin-bottom:8px">
+      <input type="text" id="syncToken" placeholder="共有トークン" style="width:100%">
+      <div class="row">
+        <button id="syncSave">設定を保存</button>
+        <button id="syncNow">今すぐ同期</button>
+      </div>
+      <div class="row"><button id="syncAuto">打刻時に自動同期: OFF</button></div>
+      <div class="note" id="syncState">未設定です。</div>
+      <div class="note">URL とトークンはこの端末内にのみ保存され、リポジトリには含まれません。圏外のときは端末に貯まり、次の同期でまとめて送られます。</div>
+    </section>
+    <section>
       <h2>書き出し</h2>
       <div class="row">
         <button id="expSum">工数CSV</button>
         <button id="expRaw">生ログCSV</button>
       </div>
-      <div class="note">CSVはExcelでそのまま開けます。共有先にドライブやメールを選べます。</div>
     </section>
     <section>
       <h2>バックアップ</h2>
@@ -183,104 +272,219 @@
   <button class="on" data-v="punch">打刻</button>
   <button data-v="sum">集計</button>
   <button data-v="log">記録</button>
+  <button data-v="master">マスタ</button>
   <button data-v="data">データ</button>
 </nav>
 
 <script>
-/* ========== 保存層(端末内) ========== */
-const KEY_C = 'kosu.cards', KEY_E = 'kosu.events';
-const mem = {};                                    // 保存不可環境向けフォールバック
+/* ================= 保存層(端末内) ================= */
+const K = {cards:'kosu.v2.cards', emp:'kosu.v2.employees', proj:'kosu.v2.projects',
+           proc:'kosu.v2.processes', ev:'kosu.v2.events', del:'kosu.v2.deleted', sync:'kosu.v2.sync'};
+const mem = {};
 function raw(k){ try{ return localStorage.getItem(k); }catch(e){ return mem[k] ?? null; } }
-function rawSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){ mem[k] = v; } }
+function rawSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){ mem[k]=v; } }
 function persistent(){ try{ localStorage.setItem('kosu.t','1'); localStorage.removeItem('kosu.t'); return true; }catch(e){ return false; } }
-let cards = JSON.parse(raw(KEY_C) || '{}');        // {uid:{name,kind}}
-let events = JSON.parse(raw(KEY_E) || '[]');       // [{id,ts,uid,src}]
-const saveC = () => rawSet(KEY_C, JSON.stringify(cards));
-const saveE = () => { events.sort((a,b)=>a.ts-b.ts); rawSet(KEY_E, JSON.stringify(events)); };
+const J = (k,d) => { try{ return JSON.parse(raw(k) ?? '') ?? d; }catch(e){ return d; } };
+
+let cards     = J(K.cards, {});   // {uid:{kind,ref}}  kind: employee|project|process|break
+let employees = J(K.emp,   {});   // {id:{name}}
+let projects  = J(K.proj,  {});   // {id:{name,code,plan,active}}
+let processes = J(K.proc,  {});   // {id:{name}}
+let events    = J(K.ev,    []);   // {id,ts,type,emp,proj,proc,src}
+let deleted   = J(K.del,   []);   // 同期先にも削除を伝えるための墓標
+let sync      = J(K.sync,  {url:'', token:'', auto:false, lastAt:0, lastOk:null, sentIds:[]});
+
+const saveCards = () => rawSet(K.cards, JSON.stringify(cards));
+const saveEmp   = () => rawSet(K.emp,   JSON.stringify(employees));
+const saveProj  = () => rawSet(K.proj,  JSON.stringify(projects));
+const saveProc  = () => rawSet(K.proc,  JSON.stringify(processes));
+const saveEv    = () => { events.sort((a,b)=>a.ts-b.ts); rawSet(K.ev, JSON.stringify(events)); };
+const saveDel   = () => rawSet(K.del,   JSON.stringify(deleted));
+const saveSync  = () => rawSet(K.sync,  JSON.stringify(sync));
+
 const $ = id => document.getElementById(id);
+const uid7 = () => Math.random().toString(36).slice(2,9);
 const normUid = u => String(u).trim().toLowerCase().replace(/-/g,':');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const DEBOUNCE = 8000, UNFIN_H = 12;
 
-/* ========== セッション構築(集計の芯) ========== */
+/* ---- 旧バージョン(kosu.cards / kosu.events)からの移行 ---- */
+(function migrate(){
+  if(Object.keys(cards).length || events.length) return;
+  const oc = J('kosu.cards', null), oe = J('kosu.events', null);
+  if(!oc || !oe) return;
+  const empId = uid7(); employees[empId] = {name:'(移行)未設定'};
+  const projId = uid7(); projects[projId] = {name:'(移行)未設定', code:'', plan:0, active:true};
+  const map = {};
+  for(const [u,c] of Object.entries(oc)){
+    if(c.kind === 'break'){ cards[u] = {kind:'break', ref:null}; }
+    else { const p = uid7(); processes[p] = {name:c.name}; cards[u] = {kind:'process', ref:p}; map[u] = p; }
+  }
+  for(const e of oe){
+    const c = oc[e.uid]; if(!c) continue;
+    events.push({id:String(e.id), ts:e.ts, type:c.kind === 'break' ? 'break' : 'process',
+                 emp:empId, proj:projId, proc:map[e.uid] ?? null, src:e.src || 'manual'});
+  }
+  saveCards(); saveEmp(); saveProj(); saveProc(); saveEv();
+})();
+
+/* ================= セッション構築(集計の芯) ================= */
+/* 社員ごとに独立して積む。工程の切替は (案件, 工程) の組で判定する。 */
 function buildSessions(evs, now = Date.now()){
-  const S = []; let cur = null, brk = null;
-  const start = (uid, t) => ({uid, name: cards[uid].name, start: t, end: null, brk: 0, open: false});
-  for(const e of evs.slice().sort((a,b)=>a.ts-b.ts)){
-    const c = cards[e.uid]; if(!c) continue;
-    if(c.kind === 'break'){
-      if(!cur) continue;
-      if(brk === null){ brk = e.ts; } else { cur.brk += e.ts - brk; brk = null; }
-    }else{
+  const byEmp = {};
+  for(const e of evs.filter(e => e.type === 'process' || e.type === 'break').sort((a,b)=>a.ts-b.ts)){
+    (byEmp[e.emp] ??= []).push(e);
+  }
+  const S = [], states = {};
+  for(const [emp, list] of Object.entries(byEmp)){
+    let cur = null, brk = null;
+    const open = e => ({emp, proj:e.proj, proc:e.proc, start:e.ts, end:null, brk:0, isOpen:false});
+    for(const e of list){
+      if(e.type === 'break'){
+        if(!cur) continue;
+        if(brk === null){ brk = e.ts; } else { cur.brk += e.ts - brk; brk = null; }
+        continue;
+      }
       if(cur && brk !== null){
         cur.brk += e.ts - brk; brk = null;
-        if(e.uid === cur.uid) continue;             // 休憩明け再開
+        if(e.proc === cur.proc && e.proj === cur.proj) continue;   // 休憩明けに同じ作業へ復帰
       }
-      if(!cur){ cur = start(e.uid, e.ts); }
-      else if(e.uid === cur.uid){ cur.end = e.ts; S.push(cur); cur = null; }
-      else { cur.end = e.ts; S.push(cur); cur = start(e.uid, e.ts); }
+      if(!cur){ cur = open(e); }
+      else if(e.proc === cur.proc && e.proj === cur.proj){ cur.end = e.ts; S.push(cur); cur = null; }
+      else { cur.end = e.ts; S.push(cur); cur = open(e); }
     }
-  }
-  const st = {working:false, onBreak:false, name:null, uid:null, since:null, brkSince:null};
-  if(cur){
-    if(brk !== null){ cur.brk += now - brk; st.onBreak = true; st.brkSince = brk; }
-    cur.open = true; S.push(cur);
-    Object.assign(st, {working:true, name:cur.name, uid:cur.uid, since:cur.start});
+    const st = {working:false, onBreak:false, proc:null, proj:null, since:null, brkSince:null};
+    if(cur){
+      if(brk !== null){ cur.brk += now - brk; st.onBreak = true; st.brkSince = brk; }
+      cur.isOpen = true; S.push(cur);
+      Object.assign(st, {working:true, proc:cur.proc, proj:cur.proj, since:cur.start});
+    }
+    states[emp] = st;
   }
   for(const s of S){ s.net = Math.max(0, (s.end ?? now) - s.start - s.brk); }
-  return {sessions:S, state:st};
+  return {sessions:S, states};
 }
+
 const fmtHM = ms => { const m = Math.round(ms/60000); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; };
+const hours = ms => ms/3600000;
 const dkey = ts => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const hm = ts => new Date(ts).toTimeString().slice(0,5);
+const empName  = id => employees[id]?.name ?? '(削除済み)';
+const projName = id => projects[id] ? (projects[id].code ? `${projects[id].code} ${projects[id].name}` : projects[id].name) : '(案件なし)';
+const procName = id => processes[id]?.name ?? '(削除済み)';
 
-/* ========== 打刻 ========== */
+/* 現在の社員・案件は「最後の社員/案件イベント」から決まる */
+function context(ts = Infinity){
+  let emp = null, projByEmp = {};
+  for(const e of events){
+    if(e.ts > ts) break;
+    if(e.type === 'employee'){ emp = e.emp; }
+    else if(e.type === 'project'){ if(e.emp) projByEmp[e.emp] = e.proj; }
+  }
+  return {emp, proj: emp ? (projByEmp[emp] ?? null) : null, projByEmp};
+}
+
+/* ================= 打刻 ================= */
 function beep(f){ try{ const c = new (window.AudioContext||window.webkitAudioContext)(),
   o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination);
   o.frequency.value = f; g.gain.value = .15; o.start(); o.stop(c.currentTime + .12); }catch(e){} }
-const setMsg = (t, c) => { $('msg').textContent = t; $('msg').className = c || ''; };
+const setMsg = (t,c) => { $('msg').textContent = t; $('msg').className = c || ''; };
+const push = o => { events.push(Object.assign({id: uid7() + Date.now().toString(36)}, o)); saveEv(); };
 
-function punch(uid, ts = Date.now(), src = 'nfc'){
-  uid = normUid(uid);
-  const c = cards[uid];
-  if(!c){                                          // 未登録 → その場で登録フォーム
-    beep(320); pendingUid = uid;
-    $('regUid').textContent = 'UID: ' + uid;
+function punch(rawUid, ts = Date.now(), src = 'nfc'){
+  const u = normUid(rawUid), c = cards[u];
+  if(!c){
+    beep(320); pendingUid = u;
+    $('regUid').textContent = 'UID: ' + u;
     $('reg').style.display = 'block'; $('regName').focus();
-    setMsg('未登録カードです。下で名前をつけてください', 'err'); return;
+    setMsg('未登録カードです。種別と名前をつけてください', 'err'); return;
   }
-  const last = events.filter(e => e.uid === uid).pop();
+  const last = events.filter(e => e.card === u).pop();
   if(last && Math.abs(ts - last.ts) < DEBOUNCE){ beep(320); setMsg('連続読み取りのため無視しました', 'err'); return; }
 
-  const {state:st} = buildSessions(events.filter(e => e.ts <= ts), ts);
-  let m;
+  const ctx = context(ts);
+
+  if(c.kind === 'employee'){
+    push({ts, type:'employee', emp:c.ref, proj:null, proc:null, src, card:u});
+    beep(660); setMsg(`社員: 「${employees[c.ref]?.name ?? '?'}」に切替`, 'ok'); return void after();
+  }
+  if(c.kind === 'project'){
+    if(!ctx.emp){ beep(320); setMsg('先に社員カードをかざしてください', 'err'); return; }
+    if(!c.ref){ beep(320); setMsg('この案件カードは割り当て未設定です。マスタで案件を選んでください', 'err'); return; }
+    push({ts, type:'project', emp:ctx.emp, proj:c.ref, proc:null, src, card:u});
+    beep(660); setMsg(`案件: 「${projName(c.ref)}」に切替`, 'ok'); return void after();
+  }
+
+  if(!ctx.emp){ beep(320); setMsg('先に社員カードをかざしてください', 'err'); return; }
+  const {states} = buildSessions(events.filter(e => e.ts <= ts), ts);
+  const st = states[ctx.emp] ?? {working:false};
+
   if(c.kind === 'break'){
     if(!st.working){ beep(320); setMsg('作業中ではないため休憩打刻は記録しません', 'err'); return; }
-    m = st.onBreak ? '休憩おわり・作業再開' : '休憩はじめ';
-  }else if(!st.working){ m = `「${c.name}」開始`; }
-  else if(uid === st.uid){ m = st.onBreak ? `休憩おわり・「${c.name}」再開` : `「${c.name}」終了`; }
-  else { m = `「${st.name}」終了 → 「${c.name}」開始`; }
+    push({ts, type:'break', emp:ctx.emp, proj:st.proj, proc:st.proc, src, card:u});
+    beep(880); setMsg(st.onBreak ? '休憩おわり・作業再開' : '休憩はじめ', 'ok'); return void after();
+  }
 
-  events.push({id: Date.now() + Math.random(), ts, uid, src}); saveE();
+  // 工程
+  if(!ctx.proj){ beep(320); setMsg('先に案件カードをかざしてください', 'err'); return; }
+  let m;
+  if(!st.working) m = `「${procName(c.ref)}」開始`;
+  else if(st.proc === c.ref && st.proj === ctx.proj) m = st.onBreak ? `休憩おわり・「${procName(c.ref)}」再開` : `「${procName(c.ref)}」終了`;
+  else m = `「${procName(st.proc)}」終了 → 「${procName(c.ref)}」開始`;
+  push({ts, type:'process', emp:ctx.emp, proj:ctx.proj, proc:c.ref, src, card:u});
+  beep(880); setMsg(m, 'ok'); after();
+}
+function after(){
   if(navigator.vibrate) navigator.vibrate(60);
-  beep(880); $('reg').style.display = 'none'; setMsg(m, 'ok'); renderAll();
+  $('reg').style.display = 'none'; renderAll();
+  if(sync.auto && sync.url) doSync(true);
 }
 
-/* ========== 描画 ========== */
+/* ================= 描画 ================= */
 let sinceTs = null, brkTs = null, pendingUid = null, wakeLock = null, rangeDays = 7;
+const PALETTE = ['#1e6b4a','#2f5d8a','#6b3fa0','#a8730f','#b3372e','#0f7b8a','#7a8c1f','#8a4b2f','#4c5a55','#a03f7a'];
+const colorOf = (() => { const m = {}; let i = 0;
+  return k => (m[k] ??= PALETTE[i++ % PALETTE.length]); })();
 
 function renderPunch(){
-  const {state:st} = buildSessions(events);
+  const ctx = context();
+  $('ctxEmp').textContent = ctx.emp ? empName(ctx.emp) : '未選択';
+  $('ctxEmp').className = 'v' + (ctx.emp ? '' : ' none');
+  $('ctxProj').textContent = ctx.proj ? projName(ctx.proj) : '未選択';
+  $('ctxProj').className = 'v' + (ctx.proj ? '' : ' none');
+
+  const {states} = buildSessions(events);
+  const st = ctx.emp ? (states[ctx.emp] ?? {working:false}) : {working:false};
   const p = $('state'); sinceTs = st.since; brkTs = st.brkSince;
-  if(!st.working){ p.className = ''; $('procName').textContent = '待機中'; $('elapsed').textContent = ''; }
-  else if(st.onBreak){ p.className = 'brk'; $('procName').textContent = st.name + '(休憩中)'; }
-  else { p.className = 'working'; $('procName').textContent = st.name; }
+  if(!st.working){ p.className = ''; $('procName').textContent = '待機中'; $('stateProj').textContent = ''; $('elapsed').textContent = ''; }
+  else {
+    p.className = st.onBreak ? 'brk' : 'working';
+    $('procName').textContent = procName(st.proc) + (st.onBreak ? '(休憩中)' : '');
+    $('stateProj').textContent = projName(st.proj);
+  }
+
+  const act = Object.entries(states).filter(([,s]) => s.working);
+  $('whoNow').innerHTML = act.length ? act.map(([e,s]) =>
+    `<div class="bar-row" style="grid-template-columns:6.5em 1fr auto">
+       <span><span class="pill employee">${esc(empName(e))}</span></span>
+       <span>${esc(procName(s.proc))} <span class="t">/ ${esc(projName(s.proj))}</span></span>
+       <span class="val">${s.onBreak ? '休憩中' : fmtHM(Date.now() - s.since)}</span></div>`).join('')
+    : '<div class="note">いません</div>';
 
   const td = dkey(Date.now());
-  $('today').innerHTML = events.filter(e => dkey(e.ts) === td).reverse().map(e =>
-    `<li style="display:flex;gap:12px;padding:7px 2px;border-bottom:1px solid var(--line);font-size:14px">
-      <span class="t">${hm(e.ts)}</span><span>${cards[e.uid]?.name ?? '未登録'}</span>
+  $('today').innerHTML = events.filter(e => dkey(e.ts) === td).slice().reverse().map(e =>
+    `<li style="display:flex;gap:10px;padding:7px 2px;border-bottom:1px solid var(--line);font-size:14px;align-items:center">
+      <span class="t">${hm(e.ts)}</span>
+      <span class="pill ${e.type}">${({employee:'社員',project:'案件',process:'工程',break:'休憩'})[e.type]}</span>
+      <span style="flex:1">${esc(labelOf(e))}</span>
       ${e.src === 'nfc' ? '' : '<span class="t">手動</span>'}</li>`).join('')
     || '<li style="font-size:14px;color:var(--sub)">まだありません</li>';
+}
+function labelOf(e){
+  if(e.type === 'employee') return empName(e.emp);
+  if(e.type === 'project')  return projName(e.proj);
+  if(e.type === 'break')    return '休憩';
+  return `${procName(e.proc)} / ${projName(e.proj)} / ${empName(e.emp)}`;
 }
 function tick(){
   if(!sinceTs){ return; }
@@ -290,92 +494,213 @@ function tick(){
 }
 setInterval(tick, 1000);
 
+function stackBar(parts, total, max){
+  const w = total > 0 ? Math.round(100*total/max) : 0;
+  return `<span style="display:block;width:${w}%"><span class="stack">` +
+    parts.map(([k,v]) => `<i style="width:${(100*v/total).toFixed(2)}%;background:${colorOf(k)}" title="${esc(procName(k))}"></i>`).join('') +
+    `</span></span>`;
+}
+
 function renderSummary(){
   const from = Date.now() - rangeDays * 864e5;
   const {sessions} = buildSessions(events);
   const inR = sessions.filter(s => s.start >= from);
-  const byDay = {}, byProc = {}, unf = [];
-  for(const s of inR){
-    (byDay[dkey(s.start)] ??= {})[s.name] = (byDay[dkey(s.start)][s.name] || 0) + s.net;
-    byProc[s.name] = (byProc[s.name] || 0) + s.net;
-    if(s.open && (dkey(s.start) !== dkey(Date.now()) || s.net > UNFIN_H * 36e5)) unf.push(s);
-  }
-  const max = Math.max(1, ...Object.values(byDay).flatMap(o => Object.values(o)));
-  $('daily').innerHTML = Object.keys(byDay).sort().reverse().map(d => {
-    const rows = Object.entries(byDay[d]).sort((a,b) => b[1]-a[1]).map(([n,v]) =>
-      `<div class="bar-row"><span>${n}</span><span><span class="bar" style="width:${Math.round(100*v/max)}%"></span></span><span class="val">${fmtHM(v)}</span></div>`).join('');
-    const tot = Object.values(byDay[d]).reduce((a,b)=>a+b,0);
-    return `<div class="day"><div class="d"><span>${d}</span><span class="tot">計 ${fmtHM(tot)}</span></div>${rows}</div>`;
-  }).join('') || '<div class="note">まだ記録がありません。</div>';
 
-  const pmax = Math.max(1, ...Object.values(byProc));
-  $('byProc').innerHTML = Object.entries(byProc).sort((a,b) => b[1]-a[1]).map(([n,v]) =>
-    `<div class="bar-row"><span>${n}</span><span><span class="bar" style="width:${Math.round(100*v/pmax)}%"></span></span><span class="val">${fmtHM(v)}</span></div>`).join('')
+  // 案件別 × 工程内訳
+  const projMap = {}, procTotal = {}, unf = [];
+  for(const s of inR){
+    const pm = (projMap[s.proj] ??= {});
+    pm[s.proc] = (pm[s.proc] || 0) + s.net;
+    procTotal[s.proc] = (procTotal[s.proc] || 0) + s.net;
+    if(s.isOpen && (dkey(s.start) !== dkey(Date.now()) || s.net > UNFIN_H*36e5)) unf.push(s);
+  }
+  const projTotals = Object.entries(projMap).map(([p,m]) => [p, Object.values(m).reduce((a,b)=>a+b,0)])
+                       .sort((a,b) => b[1]-a[1]);
+  const pmax = Math.max(1, ...projTotals.map(x => x[1]));
+  $('byProj').innerHTML = projTotals.map(([p,tot]) => {
+    const parts = Object.entries(projMap[p]).sort((a,b)=>b[1]-a[1]);
+    return `<div class="bar-row"><span>${esc(projName(p))}</span>${stackBar(parts, tot, pmax)}<span class="val">${fmtHM(tot)}</span></div>`;
+  }).join('') || '<div class="note">まだ記録がありません。</div>';
+  $('procLegend').innerHTML = Object.keys(procTotal).sort((a,b)=>procTotal[b]-procTotal[a])
+    .map(k => `<span><i style="background:${colorOf(k)}"></i>${esc(procName(k))}</span>`).join('');
+
+  // 予実
+  const pv = projTotals.filter(([p]) => (projects[p]?.plan || 0) > 0).map(([p,tot]) => {
+    const plan = projects[p].plan, act = hours(tot), diff = act - plan;
+    const cls = diff > 0 ? 'over' : 'under';
+    return `<div class="bar-row" style="grid-template-columns:8.5em 1fr 7em">
+      <span>${esc(projName(p))}</span>
+      <span class="t">予定 ${plan.toFixed(1)}h / 実績 ${act.toFixed(1)}h</span>
+      <span class="val ${cls}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)}h</span></div>`;
+  }).join('');
+  $('planVsActual').innerHTML = pv || '<div class="note">案件に予定工数を入れると、ここに予実差が出ます(マスタタブ)。</div>';
+
+  // 工程別横断
+  const cmax = Math.max(1, ...Object.values(procTotal));
+  $('byProc').innerHTML = Object.entries(procTotal).sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
+    `<div class="bar-row"><span>${esc(procName(k))}</span><span><span class="bar" style="width:${Math.round(100*v/cmax)}%;background:${colorOf(k)}"></span></span><span class="val">${fmtHM(v)}</span></div>`).join('')
+    || '<div class="note">—</div>';
+
+  // 社員別ばらつき(工程ごと)
+  const g = {};
+  for(const s of inR.filter(s => !s.isOpen)){
+    ((g[s.proc] ??= {})[s.emp] ??= []).push(s.net);
+  }
+  const rows = [];
+  for(const [pc, byE] of Object.entries(g)){
+    const stat = Object.entries(byE).map(([e,arr]) => [e, arr.reduce((a,b)=>a+b,0)/arr.length, arr.length]);
+    if(stat.length < 2) continue;
+    stat.sort((a,b)=>a[1]-b[1]);
+    const lo = stat[0], hi = stat[stat.length-1];
+    const ratio = lo[1] > 0 ? hi[1]/lo[1] : 0;
+    rows.push({pc, lo, hi, ratio});
+  }
+  rows.sort((a,b)=>b.ratio-a.ratio);
+  $('byEmp').innerHTML = rows.map(r =>
+    `<div class="bar-row" style="grid-template-columns:8.5em 1fr 4.2em">
+      <span>${esc(procName(r.pc))}</span>
+      <span class="t">最短 ${esc(empName(r.lo[0]))} ${fmtHM(r.lo[1])} / 最長 ${esc(empName(r.hi[0]))} ${fmtHM(r.hi[1])}</span>
+      <span class="val ${r.ratio >= 1.5 ? 'over' : ''}">×${r.ratio.toFixed(1)}</span></div>`).join('')
+    || '<div class="note">同じ工程を2人以上が実施すると、ここで比較できます。</div>';
+
+  // 日別
+  const byDay = {};
+  for(const s of inR){ byDay[dkey(s.start)] = (byDay[dkey(s.start)] || 0) + s.net; }
+  const dmax = Math.max(1, ...Object.values(byDay));
+  $('daily').innerHTML = Object.keys(byDay).sort().reverse().slice(0,31).map(d =>
+    `<div class="bar-row"><span>${d}</span><span><span class="bar" style="width:${Math.round(100*byDay[d]/dmax)}%"></span></span><span class="val">${fmtHM(byDay[d])}</span></div>`).join('')
     || '<div class="note">—</div>';
 
   $('unfinished').style.display = unf.length ? 'block' : 'none';
   $('unfList').innerHTML = unf.map(s =>
-    `<li>${dkey(s.start).slice(5)} ${hm(s.start)}〜 「${s.name}」が終了していません。「記録」タブで終了時刻を追加してください</li>`).join('');
+    `<li>${dkey(s.start).slice(5)} ${hm(s.start)}〜 ${esc(empName(s.emp))}「${esc(procName(s.proc))}」(${esc(projName(s.proj))})が終了していません</li>`).join('');
 }
 
 function cardOptions(){
-  return Object.entries(cards).map(([u,c]) =>
-    `<option value="${u}">${c.name}${c.kind === 'break' ? '(休憩)' : ''}</option>`).join('');
+  return Object.entries(cards).map(([u,c]) => {
+    const n = c.kind === 'employee' ? empName(c.ref) : c.kind === 'project' ? projName(c.ref)
+            : c.kind === 'break' ? '休憩' : procName(c.ref);
+    return `<option value="${esc(u)}">${esc(n)}</option>`;
+  }).join('');
 }
 function renderLog(){
   const d = $('logDate').value || dkey(Date.now());
   $('logDate').value = d;
   const rows = events.filter(e => dkey(e.ts) === d);
-  $('logTable').innerHTML = '<tr><th>時刻</th><th>カード</th><th>種別</th><th>入力</th><th></th></tr>' +
-    (rows.map(e => `<tr><td>${new Date(e.ts).toTimeString().slice(0,8)}</td>
-      <td>${cards[e.uid]?.name ?? '未登録'}</td>
-      <td>${cards[e.uid]?.kind === 'break' ? '休憩' : '工程'}</td>
-      <td>${e.src === 'nfc' ? 'NFC' : '手動'}</td>
-      <td><button class="del" onclick="delEvent(${e.id})">削除</button></td></tr>`).join('')
-      || '<tr><td colspan="5" class="note">この日の記録はありません</td></tr>');
+  $('logTable').innerHTML = '<tr><th>時刻</th><th>種別</th><th>内容</th><th></th></tr>' +
+    (rows.map(e => `<tr><td class="t">${new Date(e.ts).toTimeString().slice(0,8)}</td>
+      <td><span class="pill ${e.type}">${({employee:'社員',project:'案件',process:'工程',break:'休憩'})[e.type]}</span></td>
+      <td>${esc(labelOf(e))}</td>
+      <td><button class="del" onclick="delEvent('${e.id}')">削除</button></td></tr>`).join('')
+      || '<tr><td colspan="4" class="note">この日の記録はありません</td></tr>');
   $('addCard').innerHTML = cardOptions(); $('mCard').innerHTML = cardOptions();
   if(!$('addTs').value) $('addTs').value = d + 'T12:00';
-
-  $('cardTable').innerHTML = '<tr><th>名前</th><th>種別</th><th>UID</th><th></th></tr>' +
-    (Object.entries(cards).map(([u,c]) => `<tr>
-      <td><input type="text" id="n_${u}" value="${c.name}" size="8"></td>
-      <td><select id="k_${u}"><option value="process"${c.kind==='process'?' selected':''}>工程</option>
-        <option value="break"${c.kind==='break'?' selected':''}>休憩</option></select></td>
-      <td class="mono">${u}</td>
-      <td><button onclick="updCard('${u}')">保存</button>
-          <button class="del" onclick="delCard('${u}')">削除</button></td></tr>`).join('')
-      || '<tr><td colspan="4" class="note">カードは、打刻画面でかざすと登録できます</td></tr>');
-
   const days = new Set(events.map(e => dkey(e.ts))).size;
-  $('stats').textContent = `打刻 ${events.length}件 / カード ${Object.keys(cards).length}枚 / 記録日数 ${days}日`;
+  const unsent = events.filter(e => !sync.sentIds.includes(e.id)).length;
+  $('stats').textContent = `打刻 ${events.length}件 / カード ${Object.keys(cards).length}枚 / 案件 ${Object.keys(projects).length} / 社員 ${Object.keys(employees).length} / 工程 ${Object.keys(processes).length} / 記録日数 ${days}日 / 未同期 ${unsent}件`;
 }
-function renderAll(){ renderPunch(); renderSummary(); renderLog(); }
 
-/* ========== 操作 ========== */
+function renderMaster(){
+  const opts = (kind, sel) => {
+    const src = kind === 'employee' ? employees : kind === 'project' ? projects : processes;
+    return `<option value="">(未割当)</option>` + Object.entries(src).map(([id,o]) =>
+      `<option value="${id}"${id === sel ? ' selected' : ''}>${esc(kind === 'project' ? projName(id) : o.name)}</option>`).join('');
+  };
+  $('cardTable').innerHTML = '<tr><th>種別</th><th>割り当て</th><th>UID</th><th></th></tr>' +
+    (Object.entries(cards).map(([u,c]) => `<tr>
+      <td><select onchange="setCardKind('${esc(u)}', this.value)">
+        ${['employee','project','process','break'].map(k =>
+          `<option value="${k}"${c.kind === k ? ' selected' : ''}>${({employee:'社員',project:'案件',process:'工程',break:'休憩'})[k]}</option>`).join('')}
+      </select></td>
+      <td>${c.kind === 'break' ? '<span class="note">—</span>'
+        : `<select onchange="setCardRef('${esc(u)}', this.value)">${opts(c.kind, c.ref)}</select>`}</td>
+      <td class="mono">${esc(u)}</td>
+      <td><button class="del" onclick="delCard('${esc(u)}')">削除</button></td></tr>`).join('')
+      || '<tr><td colspan="4" class="note">打刻画面でカードをかざすと登録できます</td></tr>');
+
+  $('projTable').innerHTML = '<tr><th>コード</th><th>案件名</th><th>予定h</th><th></th></tr>' +
+    (Object.entries(projects).map(([id,p]) => `<tr>
+      <td><input type="text" id="pc_${id}" value="${esc(p.code||'')}" size="5"></td>
+      <td><input type="text" id="pn_${id}" value="${esc(p.name)}" size="9"></td>
+      <td><input type="number" id="pp_${id}" value="${p.plan||0}" step="0.5" min="0" style="width:5.5em"></td>
+      <td><button onclick="updProj('${id}')">保存</button>
+          <button class="del" onclick="delMaster('proj','${id}')">削除</button></td></tr>`).join('')
+      || '<tr><td colspan="4" class="note">案件がありません</td></tr>');
+
+  $('empTable').innerHTML = '<tr><th>社員名</th><th></th></tr>' +
+    (Object.entries(employees).map(([id,o]) => `<tr>
+      <td><input type="text" id="en_${id}" value="${esc(o.name)}"></td>
+      <td><button onclick="updEmp('${id}')">保存</button>
+          <button class="del" onclick="delMaster('emp','${id}')">削除</button></td></tr>`).join('')
+      || '<tr><td colspan="2" class="note">社員がいません</td></tr>');
+
+  $('procTable').innerHTML = '<tr><th>工程名</th><th></th></tr>' +
+    (Object.entries(processes).map(([id,o]) => `<tr>
+      <td><input type="text" id="cn_${id}" value="${esc(o.name)}"></td>
+      <td><button onclick="updProc('${id}')">保存</button>
+          <button class="del" onclick="delMaster('proc','${id}')">削除</button></td></tr>`).join('')
+      || '<tr><td colspan="2" class="note">工程がありません</td></tr>');
+}
+function renderAll(){ renderPunch(); renderSummary(); renderLog(); renderMaster(); renderSyncState(); }
+
+/* ================= 操作 ================= */
 window.delEvent = id => { if(!confirm('この打刻を削除しますか?')) return;
-  events = events.filter(e => e.id !== id); saveE(); renderAll(); };
-window.updCard = u => { cards[u] = {name: $('n_'+u).value.trim() || cards[u].name, kind: $('k_'+u).value};
-  saveC(); renderAll(); };
+  events = events.filter(e => e.id !== id);
+  if(sync.sentIds.includes(id)){ deleted.push(id); saveDel(); }
+  saveEv(); renderAll(); };
+window.setCardKind = (u,k) => { cards[u] = {kind:k, ref: k === 'break' ? null : null}; saveCards(); renderAll(); };
+window.setCardRef  = (u,r) => { cards[u].ref = r || null; saveCards(); renderAll(); };
 window.delCard = u => { if(!confirm('このカードを削除しますか?過去の記録は残ります')) return;
-  delete cards[u]; saveC(); renderAll(); };
+  delete cards[u]; saveCards(); renderAll(); };
+window.updProj = id => { projects[id] = {name: $('pn_'+id).value.trim() || projects[id].name,
+  code: $('pc_'+id).value.trim(), plan: parseFloat($('pp_'+id).value) || 0, active:true}; saveProj(); renderAll(); };
+window.updEmp  = id => { employees[id] = {name: $('en_'+id).value.trim() || employees[id].name}; saveEmp(); renderAll(); };
+window.updProc = id => { processes[id] = {name: $('cn_'+id).value.trim() || processes[id].name}; saveProc(); renderAll(); };
+window.delMaster = (kind,id) => {
+  if(!confirm('削除しますか?過去の記録は「(削除済み)」と表示されます')) return;
+  if(kind === 'proj') { delete projects[id]; saveProj(); }
+  if(kind === 'emp')  { delete employees[id]; saveEmp(); }
+  if(kind === 'proc') { delete processes[id]; saveProc(); }
+  renderAll();
+};
 
+document.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => {
+  $('regProjExtra').style.display = r.value === 'project' && r.checked ? 'block' : 'none';
+});
 $('regSave').onclick = () => {
-  const n = $('regName').value.trim(); if(!n || !pendingUid) return;
-  cards[pendingUid] = {name: n, kind: document.querySelector('input[name=kind]:checked').value};
-  saveC(); $('reg').style.display = 'none'; $('regName').value = '';
-  setMsg(`「${n}」を登録しました。もう一度かざすと打刻されます`, 'ok');
+  const kind = document.querySelector('input[name=kind]:checked').value;
+  const n = $('regName').value.trim();
+  if(!pendingUid) return;
+  if(kind === 'break'){ cards[pendingUid] = {kind:'break', ref:null}; }
+  else {
+    if(!n){ setMsg('名前を入れてください', 'err'); return; }
+    const id = uid7();
+    if(kind === 'employee'){ employees[id] = {name:n}; saveEmp(); }
+    if(kind === 'project'){ projects[id] = {name:n, code:$('regProjCode').value.trim(),
+                              plan: parseFloat($('regProjPlan').value) || 0, active:true}; saveProj(); }
+    if(kind === 'process'){ processes[id] = {name:n}; saveProc(); }
+    cards[pendingUid] = {kind, ref:id};
+  }
+  saveCards(); $('reg').style.display = 'none'; $('regName').value = '';
+  $('regProjCode').value = ''; $('regProjPlan').value = '';
+  setMsg('登録しました。もう一度かざすと打刻されます', 'ok');
   pendingUid = null; renderAll();
 };
-$('manualBtn').onclick = () => {
-  const s = $('manualSec'); s.style.display = s.style.display === 'none' ? 'block' : 'none';
-};
+$('manualBtn').onclick = () => { const s = $('manualSec'); s.style.display = s.style.display === 'none' ? 'block' : 'none'; };
 $('mNow').onclick = () => { if($('mCard').value) punch($('mCard').value, Date.now(), 'manual'); };
 $('addBtn').onclick = () => {
   const u = $('addCard').value, v = $('addTs').value; if(!u || !v) return;
-  events.push({id: Date.now() + Math.random(), ts: new Date(v).getTime(), uid: u, src: 'manual'});
-  saveE(); renderAll(); setMsg('打刻を追加しました', 'ok');
+  punch(u, new Date(v).getTime(), 'manual');
 };
 $('logShow').onclick = renderLog;
+$('npAdd').onclick = () => { const n = $('npName').value.trim(); if(!n) return;
+  projects[uid7()] = {name:n, code:$('npCode').value.trim(), plan:parseFloat($('npPlan').value)||0, active:true};
+  saveProj(); $('npName').value = $('npCode').value = $('npPlan').value = ''; renderAll(); };
+$('neAdd').onclick = () => { const n = $('neName').value.trim(); if(!n) return;
+  employees[uid7()] = {name:n}; saveEmp(); $('neName').value = ''; renderAll(); };
+$('npcAdd').onclick = () => { const n = $('npcName').value.trim(); if(!n) return;
+  processes[uid7()] = {name:n}; saveProc(); $('npcName').value = ''; renderAll(); };
+
 document.querySelectorAll('.rng').forEach(b => b.onclick = () => {
   document.querySelectorAll('.rng').forEach(x => x.classList.remove('on'));
   b.classList.add('on'); rangeDays = +b.dataset.days; renderSummary();
@@ -410,39 +735,95 @@ $('wakeBtn').onclick = async () => {
   }catch(e){ setMsg('画面ロック抑止を開始できませんでした', 'err'); }
 };
 
-/* ---- 書き出し / 復元 ---- */
+/* ================= Google スプレッドシート同期 ================= */
+function renderSyncState(){
+  $('syncUrl').value = sync.url; $('syncToken').value = sync.token;
+  $('syncAuto').textContent = '打刻時に自動同期: ' + (sync.auto ? 'ON' : 'OFF');
+  $('syncAuto').classList.toggle('on', !!sync.auto);
+  const unsent = events.filter(e => !sync.sentIds.includes(e.id)).length;
+  $('syncState').textContent = !sync.url ? '未設定です。'
+    : `未同期 ${unsent}件 / 最終同期 ${sync.lastAt ? new Date(sync.lastAt).toLocaleString('ja-JP') : 'なし'}` +
+      (sync.lastOk === false ? '(前回失敗)' : '');
+}
+$('syncSave').onclick = () => { sync.url = $('syncUrl').value.trim(); sync.token = $('syncToken').value.trim();
+  saveSync(); renderSyncState(); setMsg('同期設定を保存しました', 'ok'); };
+$('syncAuto').onclick = () => { sync.auto = !sync.auto; saveSync(); renderSyncState(); };
+$('syncNow').onclick = () => doSync(false);
+
+function syncPayload(){
+  const unsent = events.filter(e => !sync.sentIds.includes(e.id));
+  return {
+    token: sync.token,
+    events: unsent.map(e => ({
+      id:e.id, ts:new Date(e.ts).toISOString(), type:e.type,
+      emp:e.emp, empName:e.emp ? empName(e.emp) : '',
+      proj:e.proj, projCode:e.proj ? (projects[e.proj]?.code ?? '') : '',
+      projName:e.proj ? (projects[e.proj]?.name ?? '') : '',
+      proc:e.proc, procName:e.proc ? procName(e.proc) : '',
+      src:e.src
+    })),
+    deleted,
+    projects: Object.entries(projects).map(([id,p]) => ({id, code:p.code||'', name:p.name, plan:p.plan||0}))
+  };
+}
+async function doSync(silent){
+  if(!sync.url){ if(!silent) setMsg('先に GAS の URL を設定してください', 'err'); return; }
+  const body = syncPayload();
+  if(!body.events.length && !body.deleted.length){ if(!silent) setMsg('送るものがありません', 'ok'); return; }
+  try{
+    const res = await fetch(sync.url, {method:'POST', body: JSON.stringify(body),
+      headers:{'Content-Type':'text/plain;charset=utf-8'}});   // preflight を避けるため text/plain
+    const j = await res.json();
+    if(!res.ok || j.ok !== true) throw new Error(j.error || ('HTTP ' + res.status));
+    sync.sentIds = [...new Set([...sync.sentIds, ...body.events.map(e => e.id)])];
+    deleted = []; saveDel();
+    sync.lastAt = Date.now(); sync.lastOk = true; saveSync(); renderSyncState();
+    if(!silent) setMsg(`同期しました(${body.events.length}件)`, 'ok');
+  }catch(err){
+    sync.lastOk = false; saveSync(); renderSyncState();
+    if(!silent) setMsg('同期に失敗: ' + err.message, 'err');
+  }
+}
+window.addEventListener('online', () => { if(sync.auto && sync.url) doSync(true); });
+
+/* ================= 書き出し / 復元 ================= */
 function dl(name, text, mime){
-  const b = new Blob(['\ufeff' + text], {type: mime});
+  const b = new Blob(['﻿' + text], {type: mime});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 $('expSum').onclick = () => {
   const {sessions} = buildSessions(events);
-  const rows = sessions.map(s => [dkey(s.start), s.name, hm(s.start),
-    s.end ? hm(s.end) : '(未終了)', Math.round(s.brk/60000), Math.round(s.net/60000)].join(','));
-  dl(`kosu_${dkey(Date.now())}.csv`, ['date,process,start,end,break_min,net_min', ...rows].join('\r\n'), 'text/csv');
+  const rows = sessions.map(s => [dkey(s.start), empName(s.emp), projects[s.proj]?.code ?? '',
+    projects[s.proj]?.name ?? '', procName(s.proc), hm(s.start), s.end ? hm(s.end) : '(未終了)',
+    Math.round(s.brk/60000), Math.round(s.net/60000)].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  dl(`kosu_${dkey(Date.now())}.csv`,
+     ['date,employee,project_code,project,process,start,end,break_min,net_min', ...rows].join('\r\n'), 'text/csv');
 };
 $('expRaw').onclick = () => {
-  const rows = events.map(e => [new Date(e.ts).toISOString(), e.uid,
-    cards[e.uid]?.name ?? '未登録', e.src].join(','));
-  dl(`events_${dkey(Date.now())}.csv`, ['timestamp,uid,name,source', ...rows].join('\r\n'), 'text/csv');
+  const rows = events.map(e => [new Date(e.ts).toISOString(), e.type, empName(e.emp),
+    e.proj ? projName(e.proj) : '', e.proc ? procName(e.proc) : '', e.src]
+    .map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  dl(`events_${dkey(Date.now())}.csv`, ['timestamp,type,employee,project,process,source', ...rows].join('\r\n'), 'text/csv');
 };
 $('expJson').onclick = () => dl(`kosu_backup_${dkey(Date.now())}.json`,
-  JSON.stringify({v:1, cards, events}), 'application/json');
+  JSON.stringify({v:2, cards, employees, projects, processes, events}), 'application/json');
 $('impJson').onclick = () => $('impFile').click();
 $('impFile').onchange = async e => {
   const f = e.target.files[0]; if(!f) return;
   try{
     const d = JSON.parse(await f.text());
-    if(!d.cards || !d.events) throw new Error('形式が違います');
+    if(!d.events) throw new Error('形式が違います');
     if(!confirm('現在のデータを置き換えます。続けますか?')) return;
-    cards = d.cards; events = d.events; saveC(); saveE(); renderAll();
+    cards = d.cards || {}; employees = d.employees || {}; projects = d.projects || {};
+    processes = d.processes || {}; events = d.events || [];
+    saveCards(); saveEmp(); saveProj(); saveProc(); saveEv(); renderAll();
     setMsg('バックアップから復元しました', 'ok');
   }catch(err){ alert('復元できません: ' + err.message); }
 };
 
-/* ---- 起動 ---- */
+/* ================= 起動 ================= */
 $('storeInfo').textContent = persistent() ? '端末内に保存' : '保存できない環境(お試し表示)';
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 $('logDate').value = dkey(Date.now());
