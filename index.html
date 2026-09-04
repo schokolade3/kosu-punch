@@ -55,9 +55,12 @@
   ul{margin:0; padding-left:1.1em}
 
   #reg{display:none}
-  input[type=text],input[type=number],input[type=datetime-local],input[type=date],select{
+  input[type=text],input[type=number],input[type=datetime-local],input[type=date],select,textarea{
     font:inherit; font-size:14px; padding:10px; border:1px solid var(--line);
     border-radius:8px; background:#fff; max-width:100%}
+  textarea{font-family:ui-monospace,monospace; font-size:12px; line-height:1.5;
+           resize:vertical; word-break:break-all}
+  #urlCheck.bad{color:var(--err)} #urlCheck.good{color:var(--work)}
   #regName{width:100%; margin:8px 0}
   #reg label{margin-right:12px; font-size:14px; display:inline-block; margin-bottom:6px}
   .save{margin-top:10px; width:100%; padding:12px; background:var(--work); color:#fff; font-size:15px}
@@ -236,8 +239,11 @@
   <div class="view" id="v-data">
     <section>
       <h2>Google スプレッドシート連携</h2>
-      <input type="text" id="syncUrl" placeholder="GAS ウェブアプリの URL" style="width:100%; margin-bottom:8px">
-      <input type="text" id="syncToken" placeholder="共有トークン" style="width:100%">
+      <textarea id="syncUrl" rows="3" placeholder="GAS ウェブアプリの URL(/exec で終わるもの)"
+                style="width:100%; margin-bottom:8px" spellcheck="false" autocapitalize="off"></textarea>
+      <input type="text" id="syncToken" placeholder="共有トークン" style="width:100%"
+             spellcheck="false" autocapitalize="off">
+      <div class="note" id="urlCheck"></div>
       <div class="row">
         <button id="syncSave">設定を保存</button>
         <button id="syncTest">接続テスト</button>
@@ -737,8 +743,30 @@ $('wakeBtn').onclick = async () => {
 };
 
 /* ================= Google スプレッドシート同期 ================= */
+/* URL に空白や改行が混ざっても復元できるよう、すべての空白を取り除く。
+   URL に生の空白は入らないので、これで壊れることはない。 */
+const cleanUrl = s => String(s || '').replace(/\s+/g, '');
+const EXEC_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
+
+function checkUrlField(){
+  const el = $('urlCheck'), v = cleanUrl($('syncUrl').value);
+  if(!v){ el.textContent = ''; el.className = 'note'; return; }
+  if(EXEC_RE.test(v)){
+    el.textContent = `URLの形は正しいです(${v.length}文字、末尾 /exec)`;
+    el.className = 'note good';
+  }else{
+    let why = 'ウェブアプリの URL の形になっていません';
+    if(/\/dev$/.test(v)) why = 'テスト用の /dev です。デプロイで発行された /exec を使ってください';
+    else if(!/\/exec$/.test(v)) why = '末尾が /exec ではありません。途中で切れている可能性があります';
+    el.textContent = `${why}(${v.length}文字)`;
+    el.className = 'note bad';
+  }
+}
+$('syncUrl').addEventListener('input', checkUrlField);
+
 function renderSyncState(){
   $('syncUrl').value = sync.url; $('syncToken').value = sync.token;
+  checkUrlField();
   $('syncAuto').textContent = '打刻時に自動同期: ' + (sync.auto ? 'ON' : 'OFF');
   $('syncAuto').classList.toggle('on', !!sync.auto);
   const unsent = events.filter(e => !sync.sentIds.includes(e.id)).length;
@@ -746,18 +774,26 @@ function renderSyncState(){
     : `未同期 ${unsent}件 / 最終同期 ${sync.lastAt ? new Date(sync.lastAt).toLocaleString('ja-JP') : 'なし'}` +
       (sync.lastOk === false ? '(前回失敗)' : '');
 }
-$('syncSave').onclick = () => { sync.url = $('syncUrl').value.trim(); sync.token = $('syncToken').value.trim();
-  saveSync(); renderSyncState(); setMsg('同期設定を保存しました', 'ok'); };
+$('syncSave').onclick = () => {
+  sync.url = cleanUrl($('syncUrl').value);          // 改行や空白が混ざっていても直す
+  sync.token = $('syncToken').value.trim();
+  saveSync(); renderSyncState();
+  setMsg(EXEC_RE.test(sync.url)
+    ? `同期設定を保存しました(URL ${sync.url.length}文字)`
+    : '保存しましたが、URLの形が正しくありません。接続テストで確認してください',
+    EXEC_RE.test(sync.url) ? 'ok' : 'err');
+};
 $('syncAuto').onclick = () => { sync.auto = !sync.auto; saveSync(); renderSyncState(); };
 $('syncNow').onclick = () => doSync(false);
 
 /* URL だけを GET で叩いて、どこで失敗しているのかを切り分ける。
    GAS 側の doGet は {"ok":true,"hint":"POST only"} を返す。 */
 $('syncTest').onclick = async () => {
-  const u = $('syncUrl').value.trim();
+  const u = cleanUrl($('syncUrl').value);
+  $('syncUrl').value = u;                            // 掃除した結果を見えるようにする
   if(!u){ setMsg('先に URL を入れてください', 'err'); return; }
   const tail = '…' + u.slice(-28);
-  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(u)){
+  if(!EXEC_RE.test(u)){
     let why = 'ウェブアプリの URL の形ではありません';
     if(/\/dev$/.test(u)) why = 'テスト用の /dev になっています。デプロイで発行された /exec の URL を使ってください';
     else if(!/\/exec$/.test(u)) why = '末尾が /exec ではありません';
@@ -862,7 +898,7 @@ $('impFile').onchange = async e => {
 };
 
 /* ================= 起動 ================= */
-const APP_VERSION = 'v4';   // sw.js の const C と揃えること
+const APP_VERSION = 'v5';   // sw.js の const C と揃えること
 $('storeInfo').textContent = APP_VERSION + ' · ' + (persistent() ? '端末内に保存' : '保存できない環境');
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 $('logDate').value = dkey(Date.now());
