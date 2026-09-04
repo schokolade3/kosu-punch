@@ -240,6 +240,7 @@
       <input type="text" id="syncToken" placeholder="共有トークン" style="width:100%">
       <div class="row">
         <button id="syncSave">設定を保存</button>
+        <button id="syncTest">接続テスト</button>
         <button id="syncNow">今すぐ同期</button>
       </div>
       <div class="row"><button id="syncAuto">打刻時に自動同期: OFF</button></div>
@@ -750,6 +751,30 @@ $('syncSave').onclick = () => { sync.url = $('syncUrl').value.trim(); sync.token
 $('syncAuto').onclick = () => { sync.auto = !sync.auto; saveSync(); renderSyncState(); };
 $('syncNow').onclick = () => doSync(false);
 
+/* URL だけを GET で叩いて、どこで失敗しているのかを切り分ける。
+   GAS 側の doGet は {"ok":true,"hint":"POST only"} を返す。 */
+$('syncTest').onclick = async () => {
+  const u = $('syncUrl').value.trim();
+  if(!u){ setMsg('先に URL を入れてください', 'err'); return; }
+  const tail = '…' + u.slice(-28);
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(u)){
+    let why = 'ウェブアプリの URL の形ではありません';
+    if(/\/dev$/.test(u)) why = 'テスト用の /dev になっています。デプロイで発行された /exec の URL を使ってください';
+    else if(!/\/exec$/.test(u)) why = '末尾が /exec ではありません';
+    else if(/\s/.test(u)) why = '空白が混ざっています';
+    setMsg(`URLを確認してください: ${why} (末尾 ${tail})`, 'err'); return;
+  }
+  setMsg('接続を試しています…');
+  try{
+    const r = await fetch(u, {method:'GET'});
+    const t = (await r.text()).slice(0, 80).replace(/\s+/g, ' ');
+    if(t.indexOf('"ok":true') >= 0) setMsg(`接続OK (HTTP ${r.status})。あとはトークンが合っていれば同期できます`, 'ok');
+    else setMsg(`つながりましたが応答が想定外です (HTTP ${r.status}): ${t}`, 'err');
+  }catch(e){
+    setMsg(`接続できません (末尾 ${tail}): デプロイのアクセス権が「全員」か、URLが正しいかを確認してください`, 'err');
+  }
+};
+
 function syncPayload(){
   const unsent = events.filter(e => !sync.sentIds.includes(e.id));
   return {
@@ -837,7 +862,7 @@ $('impFile').onchange = async e => {
 };
 
 /* ================= 起動 ================= */
-const APP_VERSION = 'v3';   // sw.js の const C と揃えること
+const APP_VERSION = 'v4';   // sw.js の const C と揃えること
 $('storeInfo').textContent = APP_VERSION + ' · ' + (persistent() ? '端末内に保存' : '保存できない環境');
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 $('logDate').value = dkey(Date.now());
