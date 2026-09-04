@@ -114,7 +114,8 @@ function writeProjects_(ss, projects) {
 
 /* ---------- events からセッションを組み立てる(端末側と同じ規則) ---------- */
 
-function buildSessions_(evs) {
+function buildSessions_(evs, now) {
+  if (!now) now = Date.now();
   var byEmp = {};
   evs.filter(function (e) { return e.type === 'process' || e.type === 'break'; })
      .sort(function (a, b) { return a.ts - b.ts; })
@@ -145,9 +146,16 @@ function buildSessions_(evs) {
         cur.end = e.ts; out.push(cur); cur = open_(e);
       }
     });
-    if (cur) { cur.isOpen = true; out.push(cur); }   // 終了打刻がないものも残す
+    // 終了打刻がないものも残す。アプリ側と同じく、いま時点までを経過として数える
+    if (cur) {
+      if (brk !== null) cur.brk += now - brk;
+      cur.isOpen = true;
+      out.push(cur);
+    }
   });
-  out.forEach(function (s) { s.net = Math.max(0, (s.end || s.start) - s.start - s.brk); });
+  out.forEach(function (s) {
+    s.net = Math.max(0, (s.end === null ? now : s.end) - s.start - s.brk);
+  });
   return out;
 }
 
@@ -172,7 +180,8 @@ function readEvents_(ss) {
 function rebuild_(ss) {
   var H = 3600000;
   var tz = Session.getScriptTimeZone();
-  var sessions = buildSessions_(readEvents_(ss));
+  var now = Date.now();
+  var sessions = buildSessions_(readEvents_(ss), now);
 
   // --- sessions ---
   var sh = sheet_(ss, 'sessions',
@@ -192,14 +201,15 @@ function rebuild_(ss) {
 
   // --- 案件 × 工程 のピボット ---
   // cell[案件名][工程名] = 時間  (区切り文字を使わないので名前に空白があっても壊れない)
+  // 進行中のセッションも含める。アプリの集計画面と同じ数字にするため。
   var cell = {};
-  done.forEach(function (s) {
+  sessions.forEach(function (s) {
     if (!cell[s.projName]) cell[s.projName] = {};
     cell[s.projName][s.procName] = (cell[s.projName][s.procName] || 0) + s.net / H;
   });
 
-  var procs = uniq_(done.map(function (s) { return s.procName; })).sort();
-  var projs = uniq_(done.map(function (s) { return s.projName; }));
+  var procs = uniq_(sessions.map(function (s) { return s.procName; })).sort();
+  var projs = uniq_(sessions.map(function (s) { return s.projName; }));
   projs.sort(function (a, b) { return total_(cell, b, procs) - total_(cell, a, procs); });
 
   var plan = planMap_(ss);
@@ -222,14 +232,21 @@ function rebuild_(ss) {
 
   var pv = sheet_(ss, 'summary_案件x工程');
   pv.clear();
-  pv.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
-  pv.setFrozenRows(1);
-  if (body.length) pv.getRange(2, 1, body.length, head.length).setValues(body);
-  makeStackedChart_(pv, body.length, procs.length);
+  if (body.length && procs.length) {
+    pv.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
+    pv.setFrozenRows(1);
+    pv.getRange(2, 1, body.length, head.length).setValues(body);
+    makeStackedChart_(pv, body.length, procs.length);
+  } else {
+    // 集計対象がないときは白紙にせず、理由を書いておく
+    makeStackedChart_(pv, 0, 0);
+    pv.getRange(1, 1).setValue('工程の打刻がまだありません。');
+    pv.getRange(2, 1).setValue('社員カード → 案件カード → 工程カード の順にかざすと、ここに集計とグラフが出ます。');
+  }
 
   // --- 工程別(案件横断) ---
   var pc = {};
-  done.forEach(function (s) { pc[s.procName] = (pc[s.procName] || 0) + s.net / H; });
+  sessions.forEach(function (s) { pc[s.procName] = (pc[s.procName] || 0) + s.net / H; });
   writeRanked_(ss, 'summary_工程', ['工程', '合計h'], pc);
 
   // --- 社員 × 工程 の1回あたり平均 ---
