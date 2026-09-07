@@ -26,9 +26,23 @@ function doPost(e) {
     if (!expected || body.token !== expected) return json_({ ok: false, error: 'bad token' });
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    upsertEvents_(ss, body.events || [], body.deleted || []);
+
+    // M5Dial 用: マスタとカード割り当てを配る
+    if (body.action === 'masters') {
+      syncMasterSheets_(ss);
+      return json_({ ok: true, master: readMasters_(ss), cards: readCards_(ss) });
+    }
+
+    // カード割り当て(type:'card')は時刻イベントではないので別扱い
+    var timeRows = [], cardRows = [];
+    (body.events || []).forEach(function (e) {
+      if (e.type === 'card') cardRows.push(e); else timeRows.push(e);
+    });
+    upsertCards_(ss, cardRows);
+    upsertEvents_(ss, timeRows, body.deleted || []);
     writeProjects_(ss, body.projects || []);
     rebuild_(ss);
+    syncMasterSheets_(ss);
     return json_({ ok: true, received: (body.events || []).length });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -276,6 +290,87 @@ function rebuild_(ss) {
   esh.getRange(1, 1, 1, 4).setValues([['工程', '社員', '回数', '1回あたり平均h']]).setFontWeight('bold');
   esh.setFrozenRows(1);
   if (erows.length) esh.getRange(2, 1, erows.length, 4).setValues(erows);
+}
+
+/* ---------------- M5Dial 用のマスタとカード ---------------- */
+
+// events に出てきた社員・工程を master シートに拾い上げる(既存は書き換えない)。
+// Dial だけで運用を始める場合は、これらのシートに手で行を足せばよい。
+function syncMasterSheets_(ss) {
+  var evs = readEvents_(ss);
+  seed_(ss, 'master_employees', evs, 'emp', 'empName');
+  seed_(ss, 'master_processes', evs, 'proc', 'procName');
+}
+
+function seed_(ss, name, evs, idKey, nameKey) {
+  var sh = sheet_(ss, name, ['id', 'name']);
+  var have = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues()
+      .forEach(function (r) { have[String(r[0])] = true; });
+  }
+  var add = [];
+  evs.forEach(function (e) {
+    var id = e[idKey];
+    if (id && !have[String(id)]) { have[String(id)] = true; add.push([id, e[nameKey] || id]); }
+  });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 2).setValues(add);
+}
+
+function readMasters_(ss) {
+  return {
+    employees: readPairs_(ss, 'master_employees'),
+    processes: readPairs_(ss, 'master_processes'),
+    projects: readProjects_(ss)
+  };
+}
+
+function readPairs_(ss, name) {
+  var sh = ss.getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues()
+    .filter(function (r) { return r[0]; })
+    .map(function (r) { return { id: String(r[0]), name: String(r[1] || r[0]) }; });
+}
+
+function readProjects_(ss) {
+  var sh = ss.getSheetByName('projects');
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
+    .filter(function (r) { return r[0]; })
+    .map(function (r) {
+      return { id: String(r[0]), code: String(r[1] || ''), name: String(r[2] || ''), plan: Number(r[3]) || 0 };
+    });
+}
+
+var CARD_HEADER = ['uid', 'kind', 'ref_id', 'name', 'updated'];
+
+function upsertCards_(ss, rows) {
+  if (!rows || !rows.length) return;
+  var sh = sheet_(ss, 'cards', CARD_HEADER);
+  var index = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues()
+      .forEach(function (r, i) { index[String(r[0])] = i + 2; });
+  }
+  var add = [];
+  rows.forEach(function (e) {
+    var row = [e.uid, e.kind, e.refId || '', e.name || '', e.ts || ''];
+    var at = index[String(e.uid)];
+    if (at) sh.getRange(at, 1, 1, row.length).setValues([row]);
+    else add.push(row);
+  });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, CARD_HEADER.length).setValues(add);
+}
+
+function readCards_(ss) {
+  var sh = ss.getSheetByName('cards');
+  var out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, CARD_HEADER.length).getValues().forEach(function (r) {
+    if (r[0]) out[String(r[0])] = { kind: String(r[1]), id: String(r[2] || ''), name: String(r[3] || '') };
+  });
+  return out;
 }
 
 function total_(cell, proj, procs) {
