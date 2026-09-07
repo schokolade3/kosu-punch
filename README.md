@@ -156,6 +156,28 @@ ESP32-S3 の ESP-IDF ヒープは TLS と取り合いになる。mbedTLS は合�
 なお **ソフトリブート(Ctrl-D)では ESP-IDF ヒープが解放されない**。開発中に
 繰り返すと枯渇して誤診のもとになるので、計測は `machine.reset()` で行う。
 
+### boot.py を外してある
+
+この端末では UIFlow2 の起動処理(`/flash/boot.py`)を `/flash/boot_uiflow.py` に
+退避してある。`startup()` がネットワークを張るぶんヒープを消費し、アプリが
+自前で張る Wi-Fi と二重になるため。打刻専用機なので UIFlow2 のクラウド接続は
+使わない。
+
+UIFlow2 で開発し直したくなったら戻せる。
+
+```python
+import os; os.rename('/flash/boot_uiflow.py', '/flash/boot.py')
+```
+
+元のアプリも `/flash/main_demo.py`(機能デモ) と `/flash/main_uiflow.py`
+(ブロックプログラム) に残してある。
+
+### 起動ログ
+
+`heap ...` の行は意図的に出している。TLS が通らなくなったときに、どの段階で
+ヒープを失ったかが分かるようにするため。シリアルにしか出ないので実運用の
+邪魔にはならない。
+
 ### カードの割り当て
 
 未登録のカードをかざすと、その場で割り当て画面になる。
