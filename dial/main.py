@@ -14,9 +14,42 @@
 #    POST で追うと 405 になるので、必ず GET で追うこと。
 # =====================================================================
 
-import M5, machine, network, esp32, socket, ssl, json, gc, os, time
-from M5 import Widgets, Speaker, BtnA
-from hardware import RFID, Rotary
+import gc, esp32
+
+
+def hp(tag):
+    """ヒープの内訳を出す。TLS は ESP-IDF 側のヒープを使うので、
+    mpy free だけ見ていても足りるかどうか分からない。"""
+    try:
+        i = esp32.idf_heap_info(esp32.HEAP_DATA)
+        gc.collect()
+        print('heap %-9s idf=%6d largest=%6d mpy=%6d'
+              % (tag, sum(r[1] for r in i), max(r[2] for r in i), gc.mem_free()))
+    except Exception:
+        pass
+
+
+import machine, network, socket, ssl, json, os, time
+
+# M5 系は「あとで」読み込む。
+# Wi-Fi は ESP-IDF ヒープを 48〜66KB 確保するが、確保できる量は
+# そのとき空いている連続領域に左右される。M5 を先に読み込んでから
+# Wi-Fi を張ると残りが 35KB まで落ち、mbedTLS(合計40KB前後が必要)が
+# ENOMEM で失敗する。Wi-Fi を先に張れば全部載せても 52KB 残る。
+M5 = Widgets = Speaker = BtnA = RFID = Rotary = None
+FONT_JA = FONT_S = FONT_N = None
+
+
+def load_ui():
+    """Wi-Fi 接続後に呼ぶこと。順序を逆にすると通信できなくなる。"""
+    global M5, Widgets, Speaker, BtnA, RFID, Rotary, FONT_JA, FONT_S, FONT_N
+    import M5 as _M5
+    from M5 import Widgets as _W, Speaker as _Sp, BtnA as _B
+    from hardware import RFID as _R, Rotary as _Ro
+    M5, Widgets, Speaker, BtnA, RFID, Rotary = _M5, _W, _Sp, _B, _R, _Ro
+    FONT_JA = Widgets.FONTS.EFontJA24      # 日本語。24px しか無い
+    FONT_S = Widgets.FONTS.Montserrat14    # 英数字の小さい行
+    FONT_N = Widgets.FONTS.DejaVu24        # 経過時間などの数字
 
 CFG_PATH   = '/flash/kosu_cfg.json'
 CARDS_PATH = '/flash/kosu_cards.json'
@@ -84,6 +117,8 @@ def dur(sec):
 
 
 def beep(f, ms=80):
+    if Speaker is None:
+        return
     try:
         Speaker.tone(f, ms)
     except Exception:
@@ -148,6 +183,29 @@ def _dechunk(b):
     return out
 
 
+MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+
+
+def clock_ok():
+    return time.gmtime()[0] >= 2024
+
+
+def set_clock_from_http(d):
+    """HTTP の Date ヘッダ(GMT)で時計を合わせる。
+    ntptime は ESP-IDF ヒープを19KB確保したまま返さず、その後の TLS が
+    ENOMEM になる。どうせ GAS と通信するので、その応答で合わせる。"""
+    try:
+        p = d.split(' ')                    # 'Mon, 08 Sep 2026 01:23:45 GMT'
+        yr, mon, day = int(p[3]), MONTHS.index(p[2]) + 1, int(p[1])
+        hh, mm, ss = [int(x) for x in p[4].split(':')]
+        machine.RTC().datetime((yr, mon, day, 0, hh, mm, ss, 0))
+        return True
+    except Exception as e:
+        print('clock parse failed:', e)
+        return False
+
+
 def gas_post(url, payload):
     """GAS へ POST し、302 は GET で追って JSON を返す。失敗時は None。"""
     try:
@@ -155,6 +213,10 @@ def gas_post(url, payload):
         path = url[url.index(host) + len(host):]
         gc.collect()
         h, b = _req(host, path, json.dumps(payload))
+        if not clock_ok():
+            d = _hdr(h, 'Date')
+            if d and set_clock_from_http(d):
+                print('clock set from HTTP Date')
         if _code(h) in (301, 302, 303, 307):
             loc = _hdr(h, 'Location')
             lhost = loc.split('/')[2]
@@ -299,6 +361,7 @@ class App:
         self.sel = 0
         self.sel_kind = None
         self.msg_at = 0
+        self.unsent = 0        # 未送信件数。毎フレーム数え直さない
 
     # ---------------- 保存 ----------------
     def save_state(self):
@@ -342,6 +405,7 @@ class App:
             'src': 'dial',
         }
         queue_append(ev)
+        self.unsent += 1
 
     def punch(self, uid):
         now = time.time()
@@ -350,7 +414,7 @@ class App:
             return self.on_unknown(uid)
 
         if uid == self.last_uid and (time.ticks_ms() - self.last_ts) < DEBOUNCE_MS:
-            beep(320); self.say('連続読み取りを無視', RED); return
+            beep(320); self.say('連続読み無視', RED); return
         self.last_uid, self.last_ts = uid, time.ticks_ms()
 
         kind = c['kind']
@@ -359,7 +423,7 @@ class App:
             beep(660); self.say('社員: ' + self.emp_name(c['id']), BLUE); return
 
         if not self.ctx_emp:
-            beep(320); self.say('先に社員カードを', RED); return
+            beep(320); self.say('社員カードを', RED); return
 
         if kind == 'project':
             self.ctx_proj[self.ctx_emp] = c['id']
@@ -375,7 +439,7 @@ class App:
 
         if kind == 'break':
             if not s:
-                beep(320); self.say('作業中ではありません', RED); return
+                beep(320); self.say('作業中でない', RED); return
             if s.get('brkAt'):
                 s['brk'] = s.get('brk', 0) + (now - s['brkAt']); s['brkAt'] = None
                 self.emit('break', self.ctx_emp, s['proj'], s['proc'])
@@ -389,13 +453,13 @@ class App:
         # 工程
         proj = self.ctx_proj.get(self.ctx_emp)
         if not proj:
-            beep(320); self.say('先に案件カードを', RED); return
+            beep(320); self.say('案件カードを', RED); return
         pid = c['id']
         if s and s.get('brkAt'):                   # 休憩明け
             s['brk'] = s.get('brk', 0) + (now - s['brkAt']); s['brkAt'] = None
             self.emit('break', self.ctx_emp, s['proj'], s['proc'])
             if s['proc'] == pid and s['proj'] == proj:
-                self.save_state(); beep(880); self.say('休憩おわり・再開', GREEN); return
+                self.save_state(); beep(880); self.say('休憩おわり', GREEN); return
         if not s:
             self.emit('process', self.ctx_emp, proj, pid)
             self.st[self.ctx_emp] = {'proj': proj, 'proc': pid, 'start': now, 'brk': 0, 'brkAt': None}
@@ -426,6 +490,7 @@ class App:
         queue_append({'id': 'card' + self.pending_uid.replace(':', ''), 'ts': iso(),
                       'type': 'card', 'uid': self.pending_uid, 'kind': kind,
                       'refId': ident or '', 'name': name, 'src': 'dial'})
+        self.unsent += 1
         self.pending_uid = None
         self.mode = 'run'
         beep(880); self.say('登録: ' + name, GREEN)
@@ -435,43 +500,58 @@ class App:
         url = self.cfg.get('url')
         if not url:
             if not silent:
-                self.say('設定がありません', RED)
+                self.say('設定なし', RED)
             return
         if not wifi_connect(8):
             self.online = False
             if not silent:
-                self.say('Wi-Fi に繋がりません', RED)
+                self.say('Wi-Fi不可', RED)
             return
         self.online = True
         rows = queue_take(25)
         if not rows:
             if not silent:
-                self.say('送るものがありません', GREY)
+                self.say('送信なし', GREY)
             self.last_sync = time.time()
             return
         res = gas_post(url, {'token': self.cfg.get('token', ''), 'events': rows,
                              'deleted': [], 'projects': []})
         if res and res.get('ok'):
             queue_drop(len(rows))
+            self.unsent = queue_count()
             self.last_sync = time.time()
             if not silent:
                 self.say('同期 %d件' % len(rows), GREEN)
         else:
-            err = (res or {}).get('error', '通信失敗')
+            err = (res or {}).get('error')
+            msg = ('トークン不一致' if err == 'bad token'
+                   else ('通信できない' if res is None else '同期失敗'))
             if not silent:
-                self.say('同期失敗: ' + str(err)[:16], RED)
+                self.say(msg, RED)
+            print('sync failed:', err)
 
     def fetch_master(self):
         url = self.cfg.get('url')
         if not url or not wifi_connect(8):
             return False
         res = gas_post(url, {'token': self.cfg.get('token', ''), 'action': 'masters'})
-        if res and res.get('ok') and res.get('master'):
+        if res is None:
+            self.say('通信できない', RED)
+            return False
+        if not res.get('ok'):
+            # 黙って失敗すると原因が分からないので画面に出す
+            self.say('トークン不一致' if res.get('error') == 'bad token' else 'GASエラー', RED)
+            print('master fetch rejected:', res.get('error'))
+            return False
+        if res.get('master'):
             self.master = res['master']
             jsave('/flash/kosu_master.json', self.master)
             if res.get('cards'):
                 self.cards.update(res['cards'])
                 jsave(CARDS_PATH, self.cards)
+            print('master ok: emp=%d proj=%d proc=%d cards=%d' % (
+                len(self.master.get('employees', [])), len(self.master.get('projects', [])),
+                len(self.master.get('processes', [])), len(res.get('cards') or {})))
             return True
         return False
 
@@ -496,107 +576,132 @@ class App:
 
 
 # ------------------------------------------------------------ 画面
-def ring(color):
-    M5.Display.fillArc(CX, CY, R_IN, R_OUT, 0, 360, color)
+#
+# 丸いディスプレイなので、行ごとに使える横幅が違う。
+# 半径 92px の安全域における弦の長さから、各行の左右余白を決めてある。
+#   (中心y, 行の高さ, 片側の幅)
+BANDS = ((52, 26, 60), (86, 30, 84), (120, 34, 90), (154, 30, 84), (186, 28, 62))
 
-
-def clear_center():
-    M5.Display.fillCircle(CX, CY, R_IN - 2, BG)
+def fit(text, maxw):
+    """実測幅で切り詰める。文字数で切ると全角半角が混ざったときに破綻する。"""
+    if M5.Display.textWidth(text) <= maxw:
+        return text
+    while text and M5.Display.textWidth(text + '…') > maxw:
+        text = text[:-1]
+    return text + '…' if text else ''
 
 
 class Screen:
     def __init__(self):
         M5.Display.setRotation(0)
-        M5.Display.clear(BG)
-        F18, F24 = Widgets.FONTS.DejaVu18, Widgets.FONTS.DejaVu24
-        self.emp  = Widgets.Label('', 20, 40,  1.0, BLUE,  BG, F18)
-        self.proc = Widgets.Label('', 20, 76,  1.5, WHITE, BG, F24)
-        self.proj = Widgets.Label('', 20, 122, 1.0, GREY,  BG, F18)
-        self.tim  = Widgets.Label('', 20, 148, 1.0, WHITE, BG, F18)
-        self.msg  = Widgets.Label('', 20, 180, 1.0, GREY,  BG, F18)
-        self.net  = Widgets.Label('', 20, 16,  1.0, GREY,  BG, F18)
-        self.last = {}
+        M5.Display.fillScreen(BG)
         self.ring_col = None
+        self.cache = {}
 
-    def set(self, key, lbl, text, col=None):
-        if self.last.get(key) != text:
-            if col is not None:
-                lbl.setColor(col, BG)
-            lbl.setText(text)
-            self.last[key] = text
+    def ring(self, col):
+        """外周リング。塗り分けは円2枚で行う(fillArc の 0-360 は挙動が怪しい)。"""
+        if col == self.ring_col:
+            return
+        M5.Display.fillCircle(CX, CY, R_OUT, col)
+        M5.Display.fillCircle(CX, CY, R_IN, BG)
+        self.ring_col = col
+        self.cache.clear()          # 内側を塗り直したので文字も描き直す
 
-    def set_ring(self, col):
-        if self.ring_col != col:
-            ring(col)
-            self.ring_col = col
+    def line(self, idx, text, col=WHITE, font=None, fh=24):
+        if self.cache.get(idx) == (text, col):
+            return
+        font = font or FONT_JA
+        cy, h, half = BANDS[idx]
+        M5.Display.fillRect(CX - half, cy - h // 2, half * 2, h, BG)
+        if text:
+            M5.Display.setFont(font)
+            M5.Display.setTextColor(col, BG)
+            t = fit(str(text), half * 2 - 6)
+            M5.Display.drawString(t, CX - M5.Display.textWidth(t) // 2, cy - fh // 2)
+        self.cache[idx] = (text, col)
 
     def wipe(self):
-        clear_center()
-        self.last.clear()
-
-
-def center(s, per=11):
-    """雑だが実用十分な中央寄せ。文字数から左端を決める。"""
-    return max(14, CX - int(len(s) * per / 2))
+        M5.Display.fillCircle(CX, CY, R_IN, BG)
+        self.cache.clear()
 
 
 def draw_run(app, scr):
     emp = app.ctx_emp
     s = app.st.get(emp) if emp else None
-    unsent = queue_count()
+    unsent = app.unsent
 
-    scr.set('net', scr.net, ('ONLINE' if app.online else 'OFFLINE') +
-            (' +%d' % unsent if unsent else ''), GREEN if app.online else GREY)
+    scr.line(0, ('ONLINE' if app.online else 'OFFLINE') + (' +%d' % unsent if unsent else ''),
+             GREEN if app.online else GREY, FONT_S, 14)
 
-    e = app.emp_name(emp) if emp else '社員カードを'
-    scr.set('emp', scr.emp, e[:12])
+    scr.line(1, app.emp_name(emp) if emp else '社員カードを', BLUE if emp else GREY)
+
+    showing_msg = (time.time() - app.msg_at) < 6 and app.msg
 
     if s:
         on_break = bool(s.get('brkAt'))
-        scr.set_ring(AMBER if on_break else GREEN)
-        scr.set('proc', scr.proc, app.proc_name(s['proc'])[:8], AMBER if on_break else WHITE)
-        scr.set('proj', scr.proj, app.proj_name(s['proj'])[:16])
+        scr.ring(AMBER if on_break else GREEN)
+        scr.line(2, app.proc_name(s['proc']), AMBER if on_break else WHITE)
         base = s['brkAt'] if on_break else s['start']
         el = time.time() - base - (0 if on_break else s.get('brk', 0))
-        scr.set('time', scr.tim, ('休憩 ' if on_break else '') + dur(el))
+        bottom = ('休憩 ' if on_break else '') + dur(el)
+        third = app.proj_name(s['proj'])
     else:
-        scr.set_ring(RING_BG)
+        scr.ring(RING_BG)
         pj = app.ctx_proj.get(emp) if emp else None
-        scr.set('proc', scr.proc, '待機中', GREY)
-        scr.set('proj', scr.proj, app.proj_name(pj)[:16] if pj else '案件カードを')
-        scr.set('time', scr.tim, '')
+        scr.line(2, '待機中', GREY)
+        bottom = ''
+        third = app.proj_name(pj) if pj else '案件カードを'
 
-    m = app.msg if (time.time() - app.msg_at) < 6 else ''
-    scr.set('msg', scr.msg, m[:16], app.msg_col)
+    # メッセージは幅に余裕のある3行目に出す(最下段は狭くて4文字ほどしか入らない)
+    if showing_msg:
+        scr.line(3, app.msg, app.msg_col)
+    else:
+        scr.line(3, third, GREY)
+    scr.line(4, bottom, WHITE, FONT_N, 24)
 
 
 def draw_menu(app, scr, title, choices):
-    scr.set_ring(BLUE)
-    scr.set('emp', scr.emp, title)
+    scr.ring(BLUE)
     n = len(choices)
     i = app.sel % n
-    prev = choices[(i - 1) % n][1]
-    cur = choices[i][1]
-    nxt = choices[(i + 1) % n][1]
-    scr.set('proj', scr.proj, prev[:14])
-    scr.set('proc', scr.proc, ('> ' + cur)[:11], WHITE)
-    scr.set('time', scr.tim, nxt[:14])
-    scr.set('msg', scr.msg, '回して選び押して決定', GREY)
-    scr.set('net', scr.net, app.pending_uid[-11:] if app.pending_uid else '')
+    scr.line(0, app.pending_uid[-11:] if app.pending_uid else '', GREY, FONT_S, 14)
+    scr.line(1, title, GREY)
+    scr.line(2, choices[i][1], WHITE)
+    scr.line(3, choices[(i + 1) % n][1], GREY)
+    scr.line(4, '回して選ぶ', GREY)
 
 
 # ------------------------------------------------------------ 起動
 def boot():
-    M5.begin()
-    try:
-        Speaker.begin(); Speaker.setVolume(70)
-    except Exception:
-        pass
-    scr = Screen()
-    scr.set_ring(RING_BG)
-    scr.set('proc', scr.proc, '起動中', GREY)
-
+    """初期化の順序が性能を決める。
+    Wi-Fi は約66KB、Speaker は約29KB、RFID は約10KB の ESP-IDF ヒープを
+    確保したまま返さない。TLS は 20KB 前後の連続領域を要求するため、
+    ネットワーク処理(Wi-Fi/NTP/マスタ取得)を先に済ませてから
+    音とセンサーを初期化する。逆順にすると TLS が ENOMEM で通らない。"""
+    hp('start')
     a = App()
+
+    # --- 通信を先に済ませる。画面はまだ立ち上げない ---
+    print('connecting wifi ...')
+    if wifi_connect(15):
+        a.online = True
+        hp('wifi')
+        a.fetch_master()          # ここで HTTP の Date から時計も合う
+        hp('master')
+        if not clock_ok():        # GAS に届かなかったときの最後の手段
+            ntp_sync()
+            hp('ntp')
+    print('wifi=%s clock=%s' % (a.online, clock_ok()))
+
+    # --- ここから画面とセンサー ---
+    load_ui()
+    hp('ui-import')
+    M5.begin()
+    scr = Screen()
+    scr.ring(RING_BG)
+    scr.line(2, '起動中', GREY)
+    hp('display')
+
     try:
         a.rotary = Rotary()
     except Exception as e:
@@ -605,19 +710,21 @@ def boot():
         a.rfid = RFID()
     except Exception as e:
         print('rfid:', e)
-        scr.set('msg', scr.msg, 'RFID 初期化失敗', RED)
+        scr.line(3, 'RFID 失敗', RED)
+    hp('sensors')
+    try:
+        Speaker.begin(); Speaker.setVolume(70)
+    except Exception:
+        pass
+    hp('speaker')
 
-    scr.set('msg', scr.msg, 'Wi-Fi 接続中', GREY)
-    if wifi_connect(15):
-        a.online = True
-        scr.set('msg', scr.msg, '時刻同期中', GREY)
-        ntp_sync()
-        scr.set('msg', scr.msg, 'マスタ取得中', GREY)
-        a.fetch_master()
-    else:
-        scr.set('msg', scr.msg, 'オフラインで開始', AMBER)
+    if not a.online:
+        scr.line(3, 'オフライン', AMBER)
+    elif not clock_ok():
+        scr.line(3, '時刻未設定', RED)
+    a.unsent = queue_count()
     beep(1200, 60)
-    a.say('カードをかざしてください')
+    a.say('カードを')
     scr.wipe()
     return a, scr
 
@@ -695,7 +802,7 @@ def main():
         # --- 定期同期 ---
         tick += 1
         if a.mode == 'run' and tick % 40 == 0:
-            if queue_count() and (time.time() - a.last_sync) > SYNC_EVERY:
+            if a.unsent and (time.time() - a.last_sync) > SYNC_EVERY:
                 a.sync(silent=True)
                 gc.collect()
 
