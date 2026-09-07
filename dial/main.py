@@ -788,7 +788,8 @@ def main():
                 scr.wipe()
             else:
                 a.say('同期中…'); draw_run(a, scr)
-                a.sync(silent=False)
+                a.fetch_master()      # スマホ側で登録したカードを取り込む
+                a.sync(silent=False)  # こちらの打刻とカードを送る
                 scr.wipe()
 
         # --- 描画 ---

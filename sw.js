@@ -3,7 +3,7 @@
 // HTML はネットワーク優先。更新したのに古い画面が出続ける事故を防ぐため、
 // 通信できるときは必ず最新を取りに行き、失敗したときだけキャッシュを返す。
 // それ以外(アイコン等)はキャッシュ優先で速さを取る。
-const C = 'kosu-v5';
+const C = 'kosu-v6';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon.png'];
 
 self.addEventListener('install', e => {

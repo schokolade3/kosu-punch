@@ -39,8 +39,11 @@ function doPost(e) {
       if (e.type === 'card') cardRows.push(e); else timeRows.push(e);
     });
     upsertCards_(ss, cardRows);
+    upsertCards_(ss, body.cards || []);        // スマホ版はこちらで送ってくる
     upsertEvents_(ss, timeRows, body.deleted || []);
     writeProjects_(ss, body.projects || []);
+    upsertPairs_(ss, 'master_employees', body.employees || []);
+    upsertPairs_(ss, 'master_processes', body.processes || []);
     rebuild_(ss);
     syncMasterSheets_(ss);
     return json_({ ok: true, received: (body.events || []).length });
@@ -117,13 +120,44 @@ function idIndex_(sh) {
   return index;
 }
 
+// 端末が複数あるので上書きではなく id 単位の更新にする。
+// 消して書き直すと、送ってきていない端末が知らない案件が消えてしまう。
 function writeProjects_(ss, projects) {
   if (!projects || !projects.length) return;
   var sh = sheet_(ss, 'projects', ['project_id', 'code', 'name', 'plan_hours']);
-  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
-  sh.getRange(2, 1, projects.length, 4).setValues(projects.map(function (p) {
-    return [p.id, p.code, p.name, p.plan];
-  }));
+  var index = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues()
+      .forEach(function (r, i) { index[String(r[0])] = i + 2; });
+  }
+  var add = [];
+  projects.forEach(function (p) {
+    var row = [p.id, p.code || '', p.name || '', Number(p.plan) || 0];
+    var at = index[String(p.id)];
+    if (at) sh.getRange(at, 1, 1, 4).setValues([row]);
+    else add.push(row);
+  });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 4).setValues(add);
+}
+
+// master_employees / master_processes への id 単位の更新
+function upsertPairs_(ss, name, rows) {
+  if (!rows || !rows.length) return;
+  var sh = sheet_(ss, name, ['id', 'name']);
+  var index = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues()
+      .forEach(function (r, i) { index[String(r[0])] = i + 2; });
+  }
+  var add = [];
+  rows.forEach(function (o) {
+    if (!o.id) return;
+    var row = [o.id, o.name || o.id];
+    var at = index[String(o.id)];
+    if (at) sh.getRange(at, 1, 1, 2).setValues([row]);
+    else add.push(row);
+  });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 2).setValues(add);
 }
 
 /* ---------- events からセッションを組み立てる(端末側と同じ規則) ---------- */
