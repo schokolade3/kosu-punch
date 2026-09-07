@@ -133,12 +133,16 @@ def _req(host, path, body, ctype='text/plain'):
     sk.connect(ai)
     sk = ssl.wrap_socket(sk, server_hostname=host)
     if body is None:
-        req = 'GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' % (path, host)
+        sk.write(('GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n'
+                  % (path, host)).encode())
     else:
-        req = ('POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: %s\r\n'
-               'Content-Length: %d\r\nConnection: close\r\n\r\n%s'
-               % (path, host, ctype, len(body), body))
-    sk.write(req.encode())
+        # Content-Length は「バイト数」。文字数で数えると日本語が入った瞬間に
+        # 本文が途中で切られ、受け側で JSON パースエラーになる。
+        bb = body.encode('utf-8') if isinstance(body, str) else body
+        sk.write(('POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: %s\r\n'
+                  'Content-Length: %d\r\nConnection: close\r\n\r\n'
+                  % (path, host, ctype, len(bb))).encode())
+        sk.write(bb)
     buf = b''
     while True:
         d = sk.read(1024)
