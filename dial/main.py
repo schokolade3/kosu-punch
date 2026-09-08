@@ -310,6 +310,189 @@ def wifi_connect(timeout=20):
     return False
 
 
+# ------------------------------------------------------------ Wi-Fi 設定
+#
+# SSID は本体のダイヤルで選び、パスワードだけスマホから入れる。
+# 240x240 の丸画面で文字入力をさせないための作り。
+# 手順: 本体で SSID を選ぶ → 本体が AP を立てる → スマホをその AP に繋いで
+#       http://192.168.4.1 を開き、パスワードを入れる → 本体が保存して再起動。
+
+AP_SSID = 'kosu-dial'
+
+
+def ap_password():
+    """MAC から作る固定のAPパスワード。画面に出して読んでもらう。
+    開放APにすると近くの誰でも設定画面を触れてしまうので WPA2 にする。"""
+    try:
+        mac = network.WLAN(network.STA_IF).config('mac')
+        return '%08d' % (int.from_bytes(mac[3:6], 'big') % 100000000)
+    except Exception:
+        return '12345678'
+
+
+def wifi_scan():
+    """周囲の SSID を電波の強い順に返す。"""
+    w = network.WLAN(network.STA_IF)
+    w.active(True)
+    best = {}
+    try:
+        for n in w.scan():
+            try:
+                ssid = n[0].decode('utf-8')
+            except Exception:
+                continue
+            if not ssid:
+                continue
+            if ssid not in best or n[3] > best[ssid]:
+                best[ssid] = n[3]
+    except Exception as e:
+        print('scan failed:', e)
+    return sorted(best.keys(), key=lambda k: -best[k])
+
+
+def _page(ssid, msg=''):
+    return ("""<!DOCTYPE html><html lang="ja"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>M5Dial Wi-Fi設定</title>
+<style>body{font-family:system-ui,sans-serif;background:#f2f4f1;color:#161b18;
+margin:0;padding:20px;max-width:420px}h1{font-size:17px;letter-spacing:.1em}
+label{display:block;font-size:13px;color:#5c6661;margin:14px 0 4px}
+input{width:100%%;font-size:16px;padding:11px;border:1px solid #d7ddd8;border-radius:8px;
+box-sizing:border-box}button{width:100%%;margin-top:16px;padding:14px;font-size:16px;
+border:0;border-radius:10px;background:#1e6b4a;color:#fff}
+.m{margin-top:14px;font-size:14px;color:#b3372e}
+.n{margin-top:18px;font-size:12px;color:#5c6661;line-height:1.7}</style>
+<h1>M5Dial Wi-Fi設定</h1>
+<form method="POST" action="/">
+<label>接続先(本体で選んだもの。変更もできます)</label>
+<input name="s" value="%s" autocapitalize="off" autocomplete="off">
+<label>パスワード</label>
+<input name="p" type="password" autocapitalize="off" autocomplete="off">
+<button type="submit">保存して接続</button></form>
+<div class="m">%s</div>
+<div class="n">保存すると本体が再起動し、この設定用の電波は消えます。
+スマホは元のWi-Fiに戻してください。</div>""" % (ssid, msg))
+
+
+def _unquote(v):
+    """application/x-www-form-urlencoded を戻す。"""
+    v = v.replace('+', ' ')
+    out = ''
+    i = 0
+    while i < len(v):
+        if v[i] == '%' and i + 2 < len(v):
+            try:
+                out += chr(int(v[i + 1:i + 3], 16))
+                i += 3
+                continue
+            except Exception:
+                pass
+        out += v[i]
+        i += 1
+    # UTF-8 のパーセントエンコードを戻す
+    try:
+        return bytes([ord(c) for c in out]).decode('utf-8')
+    except Exception:
+        return out
+
+
+def _form(body):
+    d = {}
+    for kv in body.split('&'):
+        if '=' in kv:
+            k, _, v = kv.partition('=')
+            d[k] = _unquote(v)
+    return d
+
+
+def wifi_portal(scr, ssid):
+    """AP を立ててパスワード入力を待つ。保存できたら True。"""
+    pw_ap = ap_password()
+    ap = network.WLAN(network.AP_IF)
+    ap.active(True)
+    try:
+        ap.config(essid=AP_SSID, password=pw_ap, authmode=3)
+    except Exception as e:
+        print('ap config:', e)
+        try:
+            ap.config(essid=AP_SSID, password=pw_ap)
+        except Exception:
+            pass
+
+    scr.wipe()
+    scr.ring(BLUE)
+    scr.line(0, 'WIFI SETUP', GREY, FONT_S, 14)
+    scr.line(1, AP_SSID, WHITE)
+    scr.line(2, pw_ap, WHITE)
+    scr.line(3, '192.168.4.1', GREY)
+    scr.line(4, ssid[:12], GREY)
+    print('portal: ap=%s pw=%s target=%s' % (AP_SSID, pw_ap, ssid))
+
+    srv = socket.socket()
+    try:
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except Exception:
+        pass
+    srv.settimeout(1)
+    srv.bind(('0.0.0.0', 80))
+    srv.listen(1)
+
+    saved = False
+    t0 = time.ticks_ms()
+    while not saved and time.ticks_diff(time.ticks_ms(), t0) < 300000:   # 5分で諦める
+        try:
+            cl, addr = srv.accept()
+        except Exception:
+            if BtnA is not None:
+                try:
+                    M5.update()
+                    if BtnA.wasClicked():
+                        break                      # ボタンで中止
+                except Exception:
+                    pass
+            continue
+        try:
+            cl.settimeout(5)
+            req = cl.recv(2048).decode('utf-8', 'replace')
+            head, _, body = req.partition('\r\n\r\n')
+            if head.startswith('POST'):
+                f = _form(body)
+                new_ssid = f.get('s', '').strip()
+                new_pw = f.get('p', '')
+                if new_ssid:
+                    nvs = esp32.NVS('uiflow')
+                    nvs.set_str('ssid0', new_ssid)
+                    nvs.set_str('pswd0', new_pw)
+                    nvs.commit()
+                    saved = True
+                    html = ('<!DOCTYPE html><meta charset="utf-8">'
+                            '<body style="font-family:system-ui;padding:24px">'
+                            '<h2>保存しました</h2><p>本体を再起動して接続します。</p>'
+                            '<p>スマホは元のWi-Fiに戻してください。</p>')
+                else:
+                    html = _page(ssid, 'SSID が空です')
+            else:
+                html = _page(ssid)
+            b = html.encode('utf-8')
+            cl.send(b'HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n'
+                    b'Content-Length: ' + str(len(b)).encode() + b'\r\nConnection: close\r\n\r\n')
+            cl.send(b)
+        except Exception as e:
+            print('portal req:', e)
+        finally:
+            try:
+                cl.close()
+            except Exception:
+                pass
+
+    try:
+        srv.close()
+    except Exception:
+        pass
+    ap.active(False)
+    return saved
+
+
 def ntp_sync():
     try:
         import ntptime
@@ -430,6 +613,7 @@ class App:
         self.sel = 0
         self.sel_kind = None
         self.msg_at = 0
+        self.wifi_retry_at = 0     # 次に接続を試す時刻
         self.unsent = 0        # 未送信件数。毎フレーム数え直さない
 
     # ---------------- 保存 ----------------
@@ -514,6 +698,34 @@ class App:
         self.unsent += n
         print('cards repushed:', n)
         return n
+
+    def wifi_tick(self):
+        """落ちている間も打刻は続けたまま、裏で接続を回復させる。
+        起動時の待ち時間に間に合わなくても、あとから繋がれば拾える。"""
+        w = network.WLAN(network.STA_IF)
+        try:
+            if w.isconnected():
+                if not self.online:
+                    self.online = True
+                    self.say('接続しました', GREEN)
+                    self.fetch_master()
+                return
+        except Exception:
+            pass
+        self.online = False
+        now = time.time()
+        if now < self.wifi_retry_at:
+            return
+        self.wifi_retry_at = now + 30
+        try:
+            nvs = esp32.NVS('uiflow')
+            ssid = nvs.get_str('ssid0')
+            if not ssid:
+                return
+            w.active(True)
+            w.connect(ssid, nvs.get_str('pswd0'))   # 待たずに次のtickで確認する
+        except Exception as e:
+            print('wifi retry:', e)
 
     def nag(self, what):
         """作業は止めずに、足りないカードを知らせる。低音を2回。"""
@@ -833,6 +1045,69 @@ def draw_menu(app, scr, title, choices):
     scr.line(4, '回して選ぶ', GREY)
 
 
+
+def wifi_setup(a, scr):
+    """SSID を本体で選び、パスワードはスマホから入れてもらう。"""
+    scr.wipe(); scr.ring(BLUE)
+    scr.line(1, 'Wi-Fi設定', GREY)
+    scr.line(2, 'さがし中', WHITE)
+    nets = wifi_scan()
+    if not nets:
+        scr.line(2, '見つからない', RED)
+        time.sleep(2)
+        return False
+    nets = nets[:20] + ['やめる']
+
+    sel = 0
+    rot_last = a.rotary.get_rotary_value() if a.rotary else 0
+    while True:
+        try:
+            M5.update()
+        except Exception:
+            pass
+        n = len(nets)
+        i = sel % n
+        scr.line(0, '%d件' % (n - 1), GREY, FONT_S, 14)
+        scr.line(1, '接続先を選ぶ', GREY)
+        scr.line(2, nets[i], WHITE)
+        scr.line(3, nets[(i + 1) % n], GREY)
+        scr.line(4, '押して決定', GREY)
+
+        if a.rotary:
+            try:
+                v = a.rotary.get_rotary_value()
+            except Exception:
+                v = rot_last
+            if v != rot_last:
+                sel += 1 if v > rot_last else -1
+                rot_last = v
+                beep(1800, 6)
+
+        pressed = False
+        try:
+            pressed = BtnA.wasClicked()
+        except Exception:
+            pass
+        if pressed:
+            chosen = nets[sel % n]
+            beep(880)
+            if chosen == 'やめる':
+                scr.wipe()
+                return False
+            if wifi_portal(scr, chosen):
+                scr.wipe(); scr.ring(GREEN)
+                scr.line(2, '保存しました', GREEN)
+                scr.line(3, '再起動します', GREY)
+                beep(1200, 120)
+                time.sleep(2)
+                machine.reset()          # 綺麗なヒープで繋ぎ直す
+            scr.wipe(); scr.ring(BLUE)
+            scr.line(2, '中止しました', GREY)
+            time.sleep(2)
+            return False
+        time.sleep_ms(80)
+
+
 # ------------------------------------------------------------ 起動
 def boot():
     """初期化の順序が性能を決める。
@@ -845,7 +1120,7 @@ def boot():
 
     # --- 通信を先に済ませる。画面はまだ立ち上げない ---
     print('connecting wifi ...')
-    if wifi_connect(15):
+    if wifi_connect(20):
         a.online = True
         hp('wifi')
         a.fetch_master()          # ここで HTTP の Date から時計も合う
@@ -883,7 +1158,10 @@ def boot():
     hp('speaker')
 
     if not a.online:
+        # ここで設定画面に入れてしまうと、回線が一時的に落ちただけで
+        # 打刻端末が止まる。オフラインでも打刻はできるので、案内だけ出す。
         scr.line(3, 'オフライン', AMBER)
+        a.say('長押しでWi-Fi設定', AMBER)
     elif not clock_ok():
         scr.line(3, '時刻未設定', RED)
     a.unsent = queue_count()
@@ -927,6 +1205,16 @@ def main():
                 rot_last = v
 
         # --- 決定 / 手動同期 ---
+        held = False
+        try:
+            held = BtnA.wasHold()
+        except Exception:
+            pass
+        if held and a.mode == 'run':
+            wifi_setup(a, scr)
+            scr.wipe()
+            continue
+
         pressed = False
         try:
             pressed = BtnA.wasClicked()
@@ -967,7 +1255,8 @@ def main():
         # --- 定期同期 ---
         tick += 1
         if a.mode == 'run' and tick % 40 == 0:
-            if a.unsent and (time.time() - a.last_sync) > SYNC_EVERY:
+            a.wifi_tick()
+            if a.online and a.unsent and (time.time() - a.last_sync) > SYNC_EVERY:
                 a.sync(silent=True)
                 gc.collect()
 
