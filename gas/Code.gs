@@ -397,12 +397,27 @@ function upsertCards_(ss, rows) {
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, CARD_HEADER.length).setValues(add);
 }
 
+// UID が 0 埋めされた古い行かどうか。
+// M5Dial の RFID は 10 バイトのバッファを返し、初期の実装はその 0 埋めごと
+// UID にしていた。スマホ(Web NFC)は実長を返すので両者が一致しない。
+// 修正済みの行が別途あるため、0 埋めの行は配らずに無視する。
+function isPaddedUid_(u) {
+  var p = String(u).split(':');
+  if (p.length <= 4) return false;
+  var tail = p.slice(p.length > 7 ? 7 : 4);
+  for (var i = 0; i < tail.length; i++) {
+    if (tail[i] !== '00') return false;
+  }
+  return tail.length > 0;
+}
+
 function readCards_(ss) {
   var sh = ss.getSheetByName('cards');
   var out = {};
   if (!sh || sh.getLastRow() < 2) return out;
   sh.getRange(2, 1, sh.getLastRow() - 1, CARD_HEADER.length).getValues().forEach(function (r) {
-    if (r[0]) out[String(r[0])] = { kind: String(r[1]), id: String(r[2] || ''), name: String(r[3] || '') };
+    if (!r[0] || isPaddedUid_(r[0])) return;
+    out[String(r[0])] = { kind: String(r[1]), id: String(r[2] || ''), name: String(r[3] || '') };
   });
   return out;
 }

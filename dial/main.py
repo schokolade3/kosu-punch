@@ -119,6 +119,32 @@ def dur(sec):
     return '%d:%02d:%02d' % (sec // 3600, sec % 3600 // 60, sec % 60)
 
 
+def uid_str(raw):
+    """カード UID を、スマホの Web NFC と同じ表記に揃える。
+
+    MFRC522 の read_card_uid() は常に 10 バイトのバッファを返し、実際の
+    UID(NTAG は 7 バイト、MIFARE Classic は 4 バイト)より後ろは 0 埋めになる。
+    そのまま連結すると 04:3d:...:91:00:00:00 となり、Web NFC が返す
+    04:3d:...:91 と一致せず、同じカードが別物として扱われる。
+    """
+    b = list(raw)
+    if len(b) > 4 and not any(b[4:]):
+        b = b[:4]
+    elif len(b) > 7 and not any(b[7:]):
+        b = b[:7]
+    return ':'.join('%02x' % x for x in b)
+
+
+def trim_uid_key(u):
+    """保存済みの 0 埋め UID を、正しい長さに直す。"""
+    p = u.split(':')
+    if len(p) > 4 and all(x == '00' for x in p[4:]):
+        return ':'.join(p[:4])
+    if len(p) > 7 and all(x == '00' for x in p[7:]):
+        return ':'.join(p[:7])
+    return u
+
+
 def beep(f, ms=80):
     if Speaker is None:
         return
@@ -358,6 +384,21 @@ class App:
         for k, v in self.st.items():          # 旧形式の保存状態を補う
             if not k.startswith('_') and isinstance(v, dict) and 'emp' not in v:
                 v['emp'] = k
+        fixed = {}
+        n_fixed = 0
+        for u, v in self.cards.items():
+            nu = trim_uid_key(u)
+            if nu != u:
+                n_fixed += 1
+            fixed[nu] = v
+        if n_fixed:
+            # 0 埋めのまま登録されていたカードを直す。シートにも送り直す
+            self.cards = fixed
+            jsave(CARDS_PATH, self.cards)
+            self._fix_uid_pending = n_fixed
+            print('card uid fixed:', n_fixed)
+        else:
+            self._fix_uid_pending = 0
         self.last_uid = None
         self.last_ts = 0
         self.online = False
@@ -433,6 +474,20 @@ class App:
         ev['projName'] = self.proj_name(s['proj']) if s['proj'] else ''
         queue_append(ev)
         self.unsent += 1
+
+    def repush_cards(self):
+        """手元のカード割り当てをシートへ送り直す。
+        0 埋め UID で登録されていたものを正しい UID で登録し直すために使う。"""
+        n = 0
+        for u, v in self.cards.items():
+            queue_append({'id': 'card' + u.replace(':', ''), 'ts': iso(),
+                          'type': 'card', 'uid': u, 'kind': v.get('kind', ''),
+                          'refId': v.get('id', '') or '', 'name': v.get('name', '') or '',
+                          'src': 'dial'})
+            n += 1
+        self.unsent += n
+        print('cards repushed:', n)
+        return n
 
     def nag(self, what):
         """作業は止めずに、足りないカードを知らせる。低音を2回。"""
@@ -766,6 +821,8 @@ def boot():
         hp('wifi')
         a.fetch_master()          # ここで HTTP の Date から時計も合う
         hp('master')
+        if a._fix_uid_pending:
+            a.repush_cards()      # 0 埋め UID を正しい UID で登録し直す
         if not clock_ok():        # GAS に届かなかったときの最後の手段
             ntp_sync()
             hp('ntp')
@@ -821,7 +878,7 @@ def main():
                 if a.rfid.is_new_card_present():
                     raw = a.rfid.read_card_uid()
                     if raw:
-                        uid = ':'.join('%02x' % b for b in raw)
+                        uid = uid_str(raw)
                         if a.mode == 'run':
                             a.punch(uid)
                         scr.wipe()
