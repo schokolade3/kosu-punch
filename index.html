@@ -382,9 +382,12 @@ const fmtHM = ms => { const m = Math.round(ms/60000); return `${Math.floor(m/60)
 const hours = ms => ms/3600000;
 const dkey = ts => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const hm = ts => new Date(ts).toTimeString().slice(0,5);
-const empName  = id => employees[id]?.name ?? '(削除済み)';
-const projName = id => projects[id] ? (projects[id].code ? `${projects[id].code} ${projects[id].name}` : projects[id].name) : '(案件なし)';
-const procName = id => processes[id]?.name ?? '(削除済み)';
+const UNSET = '';                       // 社員・案件が未設定のときの値
+const empName  = id => !id ? '未設定' : (employees[id]?.name ?? '(削除済み)');
+const projName = id => !id ? '未設定'
+  : (projects[id] ? (projects[id].code ? `${projects[id].code} ${projects[id].name}` : projects[id].name)
+                  : '(削除済み)');
+const procName = id => !id ? '未設定' : (processes[id]?.name ?? '(削除済み)');
 
 /* 現在の社員・案件は「最後の社員/案件イベント」から決まる */
 function context(ts = Infinity){
@@ -404,6 +407,26 @@ function beep(f){ try{ const c = new (window.AudioContext||window.webkitAudioCon
 const setMsg = (t,c) => { $('msg').textContent = t; $('msg').className = c || ''; };
 const push = o => { events.push(Object.assign({id: uid7() + Date.now().toString(36)}, o)); saveEv(); };
 
+/* 進行中の作業に、あとから社員/案件を書き込む。
+   GAS はイベントを id で上書きするので、送信済みでも同じ id を送り直せば
+   記録が分断されずに最初から正しい紐づけになる。 */
+function backfillUnset(field, value){
+  const {sessions} = buildSessions(events);
+  const open = sessions.filter(s => s.isOpen && !s[field]);
+  if(!open.length) return 0;
+  const from = Math.min(...open.map(s => s.start));
+  let n = 0;
+  for(const e of events){
+    if(e.ts >= from && !e[field] && (e.type === 'process' || e.type === 'break')){
+      e[field] = value;
+      sync.sentIds = sync.sentIds.filter(id => id !== e.id);   // 訂正を送り直す
+      n++;
+    }
+  }
+  if(n){ saveEv(); saveSync(); }
+  return n;
+}
+
 function punch(rawUid, ts = Date.now(), src = 'nfc'){
   const u = normUid(rawUid), c = cards[u];
   if(!c){
@@ -417,35 +440,49 @@ function punch(rawUid, ts = Date.now(), src = 'nfc'){
 
   const ctx = context(ts);
 
+  const emp = ctx.emp || UNSET;
+
   if(c.kind === 'employee'){
+    const n = backfillUnset('emp', c.ref);      // 未設定で走っている作業を引き取る
     push({ts, type:'employee', emp:c.ref, proj:null, proc:null, src, card:u});
-    beep(660); setMsg(`社員: 「${employees[c.ref]?.name ?? '?'}」に切替`, 'ok'); return void after();
+    beep(660);
+    setMsg(n ? `「${empName(c.ref)}」に紐づけました(${n}件)` : `社員: 「${empName(c.ref)}」に切替`, 'ok');
+    return void after();
   }
   if(c.kind === 'project'){
-    if(!ctx.emp){ beep(320); setMsg('先に社員カードをかざしてください', 'err'); return; }
     if(!c.ref){ beep(320); setMsg('この案件カードは割り当て未設定です。マスタで案件を選んでください', 'err'); return; }
-    push({ts, type:'project', emp:ctx.emp, proj:c.ref, proc:null, src, card:u});
-    beep(660); setMsg(`案件: 「${projName(c.ref)}」に切替`, 'ok'); return void after();
+    const n = backfillUnset('proj', c.ref);
+    push({ts, type:'project', emp, proj:c.ref, proc:null, src, card:u});
+    beep(660);
+    setMsg(n ? `「${projName(c.ref)}」に紐づけました(${n}件)` : `案件: 「${projName(c.ref)}」に切替`, 'ok');
+    return void after();
   }
 
-  if(!ctx.emp){ beep(320); setMsg('先に社員カードをかざしてください', 'err'); return; }
   const {states} = buildSessions(events.filter(e => e.ts <= ts), ts);
-  const st = states[ctx.emp] ?? {working:false};
+  const st = states[emp] ?? {working:false};
 
   if(c.kind === 'break'){
     if(!st.working){ beep(320); setMsg('作業中ではないため休憩打刻は記録しません', 'err'); return; }
-    push({ts, type:'break', emp:ctx.emp, proj:st.proj, proc:st.proc, src, card:u});
+    push({ts, type:'break', emp, proj:st.proj, proc:st.proc, src, card:u});
     beep(880); setMsg(st.onBreak ? '休憩おわり・作業再開' : '休憩はじめ', 'ok'); return void after();
   }
 
-  // 工程
-  if(!ctx.proj){ beep(320); setMsg('先に案件カードをかざしてください', 'err'); return; }
+  // 工程。社員や案件が未設定でも記録は始める。
+  // 取りこぼすより、あとから紐づけられる形で記録しておくほうがよい。
+  const proj = ctx.proj || UNSET;
   let m;
   if(!st.working) m = `「${procName(c.ref)}」開始`;
-  else if(st.proc === c.ref && st.proj === ctx.proj) m = st.onBreak ? `休憩おわり・「${procName(c.ref)}」再開` : `「${procName(c.ref)}」終了`;
+  else if(st.proc === c.ref && st.proj === proj) m = st.onBreak ? `休憩おわり・「${procName(c.ref)}」再開` : `「${procName(c.ref)}」終了`;
   else m = `「${procName(st.proc)}」終了 → 「${procName(c.ref)}」開始`;
-  push({ts, type:'process', emp:ctx.emp, proj:ctx.proj, proc:c.ref, src, card:u});
-  beep(880); setMsg(m, 'ok'); after();
+  push({ts, type:'process', emp, proj, proc:c.ref, src, card:u});
+  const lack = [emp ? null : '社員', proj ? null : '案件'].filter(Boolean);
+  if(lack.length){
+    beep(440); setTimeout(() => beep(440), 150);       // 低音2回で気づかせる
+    setMsg(`${m} — ${lack.join('と')}カードもかざしてください`, 'err');
+  }else{
+    beep(880); setMsg(m, 'ok');
+  }
+  after();
 }
 function after(){
   if(navigator.vibrate) navigator.vibrate(60);
@@ -947,7 +984,7 @@ $('impFile').onchange = async e => {
 };
 
 /* ================= 起動 ================= */
-const APP_VERSION = 'v6';   // sw.js の const C と揃えること
+const APP_VERSION = 'v7';   // sw.js の const C と揃えること
 $('storeInfo').textContent = APP_VERSION + ' · ' + (persistent() ? '端末内に保存' : '保存できない環境');
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 $('logDate').value = dkey(Date.now());

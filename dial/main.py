@@ -74,6 +74,9 @@ GREY    = 0x7f8fa6
 CX = CY = 120
 R_IN, R_OUT = 96, 114
 
+UNSET = ''              # 社員・案件が未設定のときの値。集計側でも空文字で通す
+NAME_UNSET = '未設定'
+
 KIND_JA = {'employee': '社員', 'project': '案件', 'process': '工程', 'break': '休憩'}
 KIND_COLOR = {'employee': BLUE, 'project': PURPLE, 'process': GREEN, 'break': AMBER}
 
@@ -352,6 +355,9 @@ class App:
             if not k.startswith('_') and v.get('proj'):
                 self.ctx_proj[k] = v['proj']
         self.ctx_proj.update(self.st.get('_ctx_proj', {}))
+        for k, v in self.st.items():          # 旧形式の保存状態を補う
+            if not k.startswith('_') and isinstance(v, dict) and 'emp' not in v:
+                v['emp'] = k
         self.last_uid = None
         self.last_ts = 0
         self.online = False
@@ -384,11 +390,11 @@ class App:
         return ident or '-'
 
     def emp_name(self, i):
-        return self.name_of('employee', i) if i else '-'
+        return self.name_of('employee', i) if i else NAME_UNSET
 
     def proj_name(self, i):
         if not i:
-            return '-'
+            return NAME_UNSET
         for o in self.master.get('projects', []):
             if o.get('id') == i:
                 c = o.get('code') or ''
@@ -396,10 +402,12 @@ class App:
         return i
 
     def proc_name(self, i):
-        return self.name_of('process', i) if i else '-'
+        return self.name_of('process', i) if i else NAME_UNSET
 
     # ---------------- 打刻 ----------------
     def emit(self, typ, emp, proj, proc):
+        """イベントをキューに積み、その辞書を返す。
+        返り値を持っておくと、あとで同じ id で送り直して内容を訂正できる。"""
         ev = {
             'id': '%s%d' % (''.join('%02x' % b for b in os.urandom(3)), time.time()),
             'ts': iso(), 'type': typ,
@@ -410,6 +418,66 @@ class App:
         }
         queue_append(ev)
         self.unsent += 1
+        return ev
+
+    def repatch(self, s):
+        """進行中セッションの開始イベントを、同じ id で送り直す。
+        GAS は id で上書きするので、あとから社員や案件が判明しても
+        記録が分断されず、最初から正しい紐づけになる。"""
+        ev = s.get('ev')
+        if not ev:
+            return
+        ev['emp'] = s['emp']
+        ev['empName'] = self.emp_name(s['emp']) if s['emp'] else ''
+        ev['proj'] = s['proj']
+        ev['projName'] = self.proj_name(s['proj']) if s['proj'] else ''
+        queue_append(ev)
+        self.unsent += 1
+
+    def nag(self, what):
+        """作業は止めずに、足りないカードを知らせる。低音を2回。"""
+        beep(440, 70)
+        time.sleep_ms(110)
+        beep(440, 70)
+        self.say(what + 'カードを', RED)
+
+    # ---- カード種別ごとの処理 ----
+    def set_employee(self, eid):
+        prev = self.ctx_emp
+        self.ctx_emp = eid
+        # 社員未設定のまま走っているセッションがあれば、それを引き取る
+        s = self.st.get(UNSET)
+        if s and not s['emp']:
+            self.st.pop(UNSET, None)
+            s['emp'] = eid
+            self.st[eid] = s
+            self.ctx_proj[eid] = self.ctx_proj.get(eid) or self.ctx_proj.get(UNSET) or UNSET
+            self.repatch(s)
+            self.save_state()
+            beep(880); self.say(self.emp_name(eid) + 'に紐づけ', GREEN)
+            return
+        self.save_state()
+        beep(660); self.say('社員: ' + self.emp_name(eid), BLUE)
+
+    def set_project(self, pid):
+        emp = self.ctx_emp or UNSET
+        s = self.st.get(emp)
+        if s and not s['proj']:
+            # 案件未設定で走っているセッションを、遡って紐づける
+            s['proj'] = pid
+            self.ctx_proj[emp] = pid
+            self.repatch(s)
+            self.save_state()
+            beep(880); self.say(self.proj_name(pid) + 'に紐づけ', GREEN)
+            return
+        if s and s['proj'] != pid:
+            # 案件が変わるなら、いまの作業はそこで区切る
+            self.emit('process', emp, s['proj'], s['proc'])
+            self.st.pop(emp, None)
+        self.ctx_proj[emp] = pid
+        self.emit('project', emp, pid, None)
+        self.save_state()
+        beep(660); self.say('案件: ' + self.proj_name(pid), PURPLE)
 
     def punch(self, uid):
         now = time.time()
@@ -423,61 +491,59 @@ class App:
 
         kind = c['kind']
         if kind == 'employee':
-            self.ctx_emp = c['id']; self.save_state()
-            beep(660); self.say('社員: ' + self.emp_name(c['id']), BLUE); return
-
-        if not self.ctx_emp:
-            beep(320); self.say('社員カードを', RED); return
-
+            return self.set_employee(c['id'])
         if kind == 'project':
-            self.ctx_proj[self.ctx_emp] = c['id']
-            s = self.st.get(self.ctx_emp)
-            if s:                                  # 作業中なら案件変更で区切る
-                self.emit('process', self.ctx_emp, s['proj'], s['proc'])
-                self.st.pop(self.ctx_emp, None)
-            self.emit('project', self.ctx_emp, c['id'], None)
-            self.save_state()
-            beep(660); self.say('案件: ' + self.proj_name(c['id']), PURPLE); return
+            return self.set_project(c['id'])
 
-        s = self.st.get(self.ctx_emp)
+        # 社員・案件が未設定でも作業時間の記録は始める。
+        # 取りこぼすより、あとから紐づけられる形で記録するほうがよい。
+        emp = self.ctx_emp or UNSET
+        s = self.st.get(emp)
 
         if kind == 'break':
             if not s:
                 beep(320); self.say('作業中でない', RED); return
             if s.get('brkAt'):
                 s['brk'] = s.get('brk', 0) + (now - s['brkAt']); s['brkAt'] = None
-                self.emit('break', self.ctx_emp, s['proj'], s['proc'])
+                self.emit('break', emp, s['proj'], s['proc'])
                 beep(880); self.say('休憩おわり', GREEN)
             else:
                 s['brkAt'] = now
-                self.emit('break', self.ctx_emp, s['proj'], s['proc'])
+                self.emit('break', emp, s['proj'], s['proc'])
                 beep(660); self.say('休憩はじめ', AMBER)
             self.save_state(); return
 
         # 工程
-        proj = self.ctx_proj.get(self.ctx_emp)
-        if not proj:
-            beep(320); self.say('案件カードを', RED); return
+        proj = self.ctx_proj.get(emp) or UNSET
         pid = c['id']
         if s and s.get('brkAt'):                   # 休憩明け
             s['brk'] = s.get('brk', 0) + (now - s['brkAt']); s['brkAt'] = None
-            self.emit('break', self.ctx_emp, s['proj'], s['proc'])
+            self.emit('break', emp, s['proj'], s['proc'])
             if s['proc'] == pid and s['proj'] == proj:
                 self.save_state(); beep(880); self.say('休憩おわり', GREEN); return
+
         if not s:
-            self.emit('process', self.ctx_emp, proj, pid)
-            self.st[self.ctx_emp] = {'proj': proj, 'proc': pid, 'start': now, 'brk': 0, 'brkAt': None}
+            ev = self.emit('process', emp, proj, pid)
+            self.st[emp] = {'emp': emp, 'proj': proj, 'proc': pid,
+                            'start': now, 'brk': 0, 'brkAt': None, 'ev': ev}
             beep(880); self.say(self.proc_name(pid) + ' 開始', GREEN)
         elif s['proc'] == pid and s['proj'] == proj:
-            self.emit('process', self.ctx_emp, proj, pid)
-            self.st.pop(self.ctx_emp, None)
+            self.emit('process', emp, proj, pid)
+            self.st.pop(emp, None)
             beep(880); self.say(self.proc_name(pid) + ' 終了', GREY)
         else:
-            self.emit('process', self.ctx_emp, s['proj'], s['proc'])
-            self.emit('process', self.ctx_emp, proj, pid)
-            self.st[self.ctx_emp] = {'proj': proj, 'proc': pid, 'start': now, 'brk': 0, 'brkAt': None}
+            self.emit('process', emp, s['proj'], s['proc'])
+            ev = self.emit('process', emp, proj, pid)
+            self.st[emp] = {'emp': emp, 'proj': proj, 'proc': pid,
+                            'start': now, 'brk': 0, 'brkAt': None, 'ev': ev}
             beep(880); self.say('切替 → ' + self.proc_name(pid), GREEN)
         self.save_state()
+
+        # 足りないものがあれば、記録は続けたまま知らせる
+        if emp == UNSET:
+            self.nag('社員')
+        elif proj == UNSET:
+            self.nag('案件')
 
     # ---------------- 未登録カード ----------------
     def on_unknown(self, uid):
@@ -631,13 +697,19 @@ class Screen:
 
 def draw_run(app, scr):
     emp = app.ctx_emp
-    s = app.st.get(emp) if emp else None
+    s = app.st.get(emp or UNSET)
     unsent = app.unsent
 
     scr.line(0, ('ONLINE' if app.online else 'OFFLINE') + (' +%d' % unsent if unsent else ''),
              GREEN if app.online else GREY, FONT_S, 14)
 
-    scr.line(1, app.emp_name(emp) if emp else '社員カードを', BLUE if emp else GREY)
+    # 社員行。作業中なのに未設定なら赤で促す
+    if s and not s['emp']:
+        scr.line(1, NAME_UNSET, RED)
+    elif emp:
+        scr.line(1, app.emp_name(emp), BLUE)
+    else:
+        scr.line(1, '社員カードを', GREY)
 
     showing_msg = (time.time() - app.msg_at) < 6 and app.msg
 
@@ -649,18 +721,20 @@ def draw_run(app, scr):
         el = time.time() - base - (0 if on_break else s.get('brk', 0))
         bottom = ('休憩 ' if on_break else '') + dur(el)
         third = app.proj_name(s['proj'])
+        third_col = RED if not s['proj'] else GREY
     else:
         scr.ring(RING_BG)
-        pj = app.ctx_proj.get(emp) if emp else None
+        pj = app.ctx_proj.get(emp or UNSET)
         scr.line(2, '待機中', GREY)
         bottom = ''
         third = app.proj_name(pj) if pj else '案件カードを'
+        third_col = GREY
 
     # メッセージは幅に余裕のある3行目に出す(最下段は狭くて4文字ほどしか入らない)
     if showing_msg:
         scr.line(3, app.msg, app.msg_col)
     else:
-        scr.line(3, third, GREY)
+        scr.line(3, third, third_col)
     scr.line(4, bottom, WHITE, FONT_N, 24)
 
 
