@@ -119,20 +119,38 @@ def dur(sec):
     return '%d:%02d:%02d' % (sec // 3600, sec % 3600 // 60, sec % 60)
 
 
-def uid_str(raw):
-    """カード UID を、スマホの Web NFC と同じ表記に揃える。
+def hexs(b):
+    return ':'.join('%02x' % x for x in b)
 
-    MFRC522 の read_card_uid() は常に 10 バイトのバッファを返し、実際の
-    UID(NTAG は 7 バイト、MIFARE Classic は 4 バイト)より後ろは 0 埋めになる。
-    そのまま連結すると 04:3d:...:91:00:00:00 となり、Web NFC が返す
-    04:3d:...:91 と一致せず、同じカードが別物として扱われる。
+
+def uid_candidates(raw):
+    """読み取りバッファから、UID としてあり得る表記を短い順に返す。
+
+    read_card_uid() は常に 10 バイトのバッファを返すが、実際の UID は
+    4 バイト(MIFARE Classic)か 7 バイト(NTAG)。しかも**前に読んだカードの
+    残骸がバッファに残る**ことがあり、末尾の 0 を見るだけでは長さを誤る。
+    実際、4 バイトの d2:c1:30:54 を NTAG の直後に読むと
+    d2:c1:30:54:85:21:90 になっていた。
+    そこで長さを決め打ちせず、4→7→10 の順に既知のカードと突き合わせる。
     """
+    b = list(raw)
+    out = []
+    for n in (4, 7, 10):
+        if len(b) >= n:
+            out.append(hexs(b[:n]))
+    if not out:
+        out.append(hexs(b))
+    return out
+
+
+def uid_str(raw):
+    """新規登録時の推定表記。末尾の 0 を落とした長さを採用する。"""
     b = list(raw)
     if len(b) > 4 and not any(b[4:]):
         b = b[:4]
     elif len(b) > 7 and not any(b[7:]):
         b = b[:7]
-    return ':'.join('%02x' % x for x in b)
+    return hexs(b)
 
 
 def trim_uid_key(u):
@@ -424,6 +442,14 @@ class App:
     def card(self, uid):
         return self.cards.get(uid)
 
+    def resolve(self, raw):
+        """読み取りバッファから登録済みカードを引く。見つからなければ
+        新規登録用の推定 UID を返す。"""
+        for u in uid_candidates(raw):
+            if u in self.cards:
+                return u
+        return uid_str(raw)
+
     def name_of(self, kind, ident):
         for o in self.master.get(kind + 's' if kind != 'process' else 'processes', []):
             if o.get('id') == ident:
@@ -672,7 +698,10 @@ class App:
             self.master = res['master']
             jsave('/flash/kosu_master.json', self.master)
             if res.get('cards'):
-                self.cards.update(res['cards'])
+                # シート側に 0 埋めの古い行が残っていても取り込みで増やさない。
+                # 正しい長さに直してから入れるので、両方あっても1件にまとまる。
+                for u, v in res['cards'].items():
+                    self.cards[trim_uid_key(u)] = v
                 jsave(CARDS_PATH, self.cards)
             print('master ok: emp=%d proj=%d proc=%d cards=%d' % (
                 len(self.master.get('employees', [])), len(self.master.get('projects', [])),
@@ -878,7 +907,7 @@ def main():
                 if a.rfid.is_new_card_present():
                     raw = a.rfid.read_card_uid()
                     if raw:
-                        uid = uid_str(raw)
+                        uid = a.resolve(raw)
                         if a.mode == 'run':
                             a.punch(uid)
                         scr.wipe()
